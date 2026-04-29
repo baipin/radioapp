@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun playStream(streamUrl: String) {
+        fun playStream(streamUrl: String, stationName: String) { // 增加 stationName 参数
             mainScope.launch {
                 ensureMediaControllerConnected {
                     mediaController?.sendCustomCommand(
@@ -88,10 +88,11 @@ class MainActivity : AppCompatActivity() {
                             PlaybackService.COMMAND_PLAY_STREAM,
                             android.os.Bundle().apply {
                                 putString("url", streamUrl)
+                                putString("name", stationName) // 将名称放入 Bundle
                             }
-                        ), Bundle.EMPTY
+                        ), android.os.Bundle.EMPTY
                     )
-                    Log.d("BaiponBridge", "播放流: $streamUrl")
+                    Log.d("BaiponBridge", "播放流: $stationName - $streamUrl")
                 }
             }
         }
@@ -167,52 +168,41 @@ class MainActivity : AppCompatActivity() {
         connectMediaController()
     }
 
-    // 修改连接逻辑
-private fun connectMediaController() {
-    // 如果已经连接成功，不再重复连接
-    if (mediaController != null) {
-        return
-    }
-    
-    // ❌ 删除这行，不要重置标记
-    // mediaControllerInitialized = false
-    
-    val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-    controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
-
-    controllerFuture.addListener({
-        try {
-            mediaController = controllerFuture.get()
-            mediaControllerInitialized = true  // ✅ 只在成功时标记
-            Log.d("BaiponBridge", "MediaController 连接成功")
-        } catch (e: ExecutionException) {
-            Log.e("BaiponBridge", "MediaController 连接失败", e)
-            mediaControllerInitialized = false
+    private fun connectMediaController() {
+        if (mediaControllerInitialized || mediaController != null) {
+            return
         }
-    }, ContextCompat.getMainExecutor(this))
-}
 
-// 修改 onStart
-override fun onStart() {
-    super.onStart()
-    // 每次回到前台都尝试重新连接
-    if (!mediaControllerInitialized || mediaController == null) {
-        connectMediaController()
+        mediaControllerInitialized = true
+        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+
+        controllerFuture.addListener({
+            try {
+                mediaController = controllerFuture.get()
+                Log.d("BaiponBridge", "MediaController 连接成功")
+            } catch (e: ExecutionException) {
+                Log.e("BaiponBridge", "MediaController 连接失败", e)
+                mediaControllerInitialized = false
+            } catch (e: java.util.concurrent.CancellationException) {
+                Log.w("BaiponBridge", "MediaController 任务被取消")
+                mediaControllerInitialized = false
+            }
+        }, ContextCompat.getMainExecutor(this))
     }
-}
 
-// 修改 onStop - 不要断开连接
-override fun onStop() {
-    super.onStop()
-    // ✅ 不要清空任何东西，让Service继续运行
-    // 只是Activity进入后台，不影响播放
-    Log.d("BaiponBridge", "Activity进入后台，Service继续运行")
-}
-
-// 启动Service的代码简化
-private fun startPlaybackService() {
-    PlaybackService.startService(this)  // 使用companion方法
-}
+    override fun onStop() {
+        super.onStop()
+        // 不释放 mediaController，保持后台播放
+        try {
+            if (::controllerFuture.isInitialized && mediaControllerInitialized) {
+                // 只在明确不需要时才释放
+                mediaControllerInitialized = false
+            }
+        } catch (e: Exception) {
+            Log.w("BaiponBridge", "停止时出错", e)
+        }
+    }
 
     private fun setupWindowDisplay() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
@@ -240,7 +230,7 @@ private fun startPlaybackService() {
             }
         }
 
-        myWebView.addJavascriptInterface(WebAppInterface(), "Android")
+        myWebView.addJavascriptInterface(WebAppInterface(), "AndroidBridge")
         myWebView.webChromeClient = WebChromeClient()
 
         myWebView.webViewClient = object : WebViewClient() {
@@ -264,30 +254,44 @@ private fun startPlaybackService() {
                 }
             }
 
+            // 修改 MainActivity.kt 中的 script 字符串
             override fun onPageFinished(view: WebView?, url: String?) {
                 val script = """
-    (function() {
-        console.log('Baipon Radio Bridge injected');
+        (function() {
+            console.log('Baipon Radio Bridge injected');
+            var lastUrl = "";
 
-        function notifyPlay() {
-            var audio = document.querySelector('audio');
-            if (audio && (audio.src || audio.currentSrc)) {
-                var realUrl = audio.currentSrc || audio.src;
-                if (realUrl.includes('http')) {
-                    Android.playStream(realUrl);
-                    console.log('Sent stream URL to native: ' + realUrl);
+            function notifyPlay() {
+                var audio = document.querySelector('audio');
+                // 从网页 DOM 中抓取当前的电台名称
+                var stationNameElement = document.getElementById('current-name');
+                var stationName = (stationNameElement && stationNameElement.innerText.trim()) 
+                                  ? stationNameElement.innerText.trim() 
+                                  : "百品电台";
+                
+                if (audio && (audio.src || audio.currentSrc)) {
+                    var realUrl = audio.currentSrc || audio.src;
+                    
+                    // 只有当 URL 有效且与上次不同时，才发送指令给 App
+                    if (realUrl.startsWith('http') && realUrl !== lastUrl) {
+                        // 必须调用 AndroidBridge (确保与 addJavascriptInterface 一致)
+                        if (window.AndroidBridge && window.AndroidBridge.playStream) {
+                            window.AndroidBridge.playStream(realUrl, stationName);
+                            lastUrl = realUrl;
+                            console.log('同步到 App: ' + stationName + ' -> ' + realUrl);
+                        }
+                    }
                 }
             }
-        }
 
-        // 监听播放事件
-        document.addEventListener('play', notifyPlay, true);
-        document.addEventListener('playing', notifyPlay, true);
-
-        // 每 2 秒检查一次（应对动态加载）
-        setInterval(notifyPlay, 2000);
-    })();
-""".trimIndent()
+            // 监听播放事件：当用户点击网页播放按钮时立即同步
+            document.addEventListener('play', notifyPlay, true);
+            document.addEventListener('playing', notifyPlay, true);
+            
+            // 轮询检查：应对网页内部逻辑自动切换下一首的情况
+            setInterval(notifyPlay, 3000); 
+        })();
+    """.trimIndent()
 
                 view?.evaluateJavascript(script, null)
             }

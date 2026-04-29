@@ -58,5 +58,6 @@ dependencies {
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.3.0")
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.media3:media3-session:1.10.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.10.0")
     implementation("androidx.media3:media3-exoplayer:1.10.0")
 }
