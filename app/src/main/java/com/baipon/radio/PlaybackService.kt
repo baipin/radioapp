@@ -165,7 +165,7 @@ class PlaybackService : MediaSessionService() {
             )
         }
 
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("百品电台")
             .setContentText(
                 if (isPlaying) "正在播放..." else "已暂停"
@@ -173,14 +173,19 @@ class PlaybackService : MediaSessionService() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .addAction(playPauseAction)
-            .setStyle(
-                androidx.media3.session.MediaStyleNotificationHelper
-                    .MediaStyle(mediaSession)
-                    .setShowActionsInCompactView(0)
-            )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(isPlaying)
-            .build()
+
+        // 如果 mediaSession 不为空，添加 MediaStyle
+        mediaSession?.let { session ->
+            builder.setStyle(
+                androidx.media3.session.MediaStyleNotificationHelper
+                    .MediaStyle(session)
+                    .setShowActionsInCompactView(0)
+            )
+        }
+
+        return builder.build()
     }
 
     // 播放直播流的核心方法
