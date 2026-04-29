@@ -167,41 +167,52 @@ class MainActivity : AppCompatActivity() {
         connectMediaController()
     }
 
-    private fun connectMediaController() {
-        if (mediaControllerInitialized || mediaController != null) {
-            return
-        }
-
-        mediaControllerInitialized = true
-        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
-
-        controllerFuture.addListener({
-            try {
-                mediaController = controllerFuture.get()
-                Log.d("BaiponBridge", "MediaController 连接成功")
-            } catch (e: ExecutionException) {
-                Log.e("BaiponBridge", "MediaController 连接失败", e)
-                mediaControllerInitialized = false
-            } catch (e: java.util.concurrent.CancellationException) {
-                Log.w("BaiponBridge", "MediaController 任务被取消")
-                mediaControllerInitialized = false
-            }
-        }, ContextCompat.getMainExecutor(this))
+    // 修改连接逻辑
+private fun connectMediaController() {
+    // 如果已经连接成功，不再重复连接
+    if (mediaController != null) {
+        return
     }
+    
+    // ❌ 删除这行，不要重置标记
+    // mediaControllerInitialized = false
+    
+    val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+    controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
 
-    override fun onStop() {
-        super.onStop()
-        // 不释放 mediaController，保持后台播放
+    controllerFuture.addListener({
         try {
-            if (::controllerFuture.isInitialized && mediaControllerInitialized) {
-                // 只在明确不需要时才释放
-                mediaControllerInitialized = false
-            }
-        } catch (e: Exception) {
-            Log.w("BaiponBridge", "停止时出错", e)
+            mediaController = controllerFuture.get()
+            mediaControllerInitialized = true  // ✅ 只在成功时标记
+            Log.d("BaiponBridge", "MediaController 连接成功")
+        } catch (e: ExecutionException) {
+            Log.e("BaiponBridge", "MediaController 连接失败", e)
+            mediaControllerInitialized = false
         }
+    }, ContextCompat.getMainExecutor(this))
+}
+
+// 修改 onStart
+override fun onStart() {
+    super.onStart()
+    // 每次回到前台都尝试重新连接
+    if (!mediaControllerInitialized || mediaController == null) {
+        connectMediaController()
     }
+}
+
+// 修改 onStop - 不要断开连接
+override fun onStop() {
+    super.onStop()
+    // ✅ 不要清空任何东西，让Service继续运行
+    // 只是Activity进入后台，不影响播放
+    Log.d("BaiponBridge", "Activity进入后台，Service继续运行")
+}
+
+// 启动Service的代码简化
+private fun startPlaybackService() {
+    PlaybackService.startService(this)  // 使用companion方法
+}
 
     private fun setupWindowDisplay() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
