@@ -28,6 +28,7 @@ import java.net.URL
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.*
 import java.util.concurrent.ExecutionException
 
 class MainActivity : AppCompatActivity() {
@@ -39,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     // Media3 Controller
     private var mediaController: MediaController? = null
     private lateinit var controllerFuture: ListenableFuture<MediaController>
+    private var mediaControllerInitialized = false
+    private val mainScope = MainScope()
 
     // MDUI 风格错误页面
     private val errorHtmlContent = """
@@ -78,22 +81,40 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun playStream(streamUrl: String) {
-            runOnUiThread {
-                mediaController?.sendCustomCommand(
-                    androidx.media3.session.SessionCommand(
-                        PlaybackService.COMMAND_PLAY_STREAM,
-                        android.os.Bundle().apply {
-                            putString("url", streamUrl)
-                        }
-                    ), Bundle.EMPTY
-                )
+            mainScope.launch {
+                ensureMediaControllerConnected {
+                    mediaController?.sendCustomCommand(
+                        androidx.media3.session.SessionCommand(
+                            PlaybackService.COMMAND_PLAY_STREAM,
+                            android.os.Bundle().apply {
+                                putString("url", streamUrl)
+                            }
+                        ), Bundle.EMPTY
+                    )
+                    Log.d("BaiponBridge", "播放流: $streamUrl")
+                }
             }
         }
 
         @JavascriptInterface
         fun pauseStream() {
-            runOnUiThread {
+            mainScope.launch {
                 mediaController?.pause()
+                Log.d("BaiponBridge", "暂停播放")
+            }
+        }
+    }
+
+    private suspend fun ensureMediaControllerConnected(action: suspend () -> Unit) {
+        return withContext(Dispatchers.Main) {
+            if (mediaController != null) {
+                action()
+            } else if (!mediaControllerInitialized) {
+                connectMediaController()
+                delay(500) // 等待连接建立
+                if (mediaController != null) {
+                    action()
+                }
             }
         }
     }
@@ -127,36 +148,58 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         checkUpdate(isManual = false)
         requestNotificationPermission()
+
+        // 启动 PlaybackService
+        startPlaybackService()
+    }
+
+    private fun startPlaybackService() {
+        val intent = Intent(this, PlaybackService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 
     override fun onStart() {
         super.onStart()
-        // 只在 mediaController 为 null 时初始化
-        if (mediaController == null) {
-            val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-            controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+        connectMediaController()
+    }
 
-            controllerFuture.addListener({
-                try {
-                    mediaController = controllerFuture.get()
-                } catch (e: ExecutionException) {
-                    Log.e("BaiponBridge", "MediaController 连接失败", e)
-                } catch (e: java.util.concurrent.CancellationException) {
-                    Log.w("BaiponBridge", "MediaController 任务被取消")
-                }
-            }, ContextCompat.getMainExecutor(this))
+    private fun connectMediaController() {
+        if (mediaControllerInitialized || mediaController != null) {
+            return
         }
+
+        mediaControllerInitialized = true
+        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+
+        controllerFuture.addListener({
+            try {
+                mediaController = controllerFuture.get()
+                Log.d("BaiponBridge", "MediaController 连接成功")
+            } catch (e: ExecutionException) {
+                Log.e("BaiponBridge", "MediaController 连接失败", e)
+                mediaControllerInitialized = false
+            } catch (e: java.util.concurrent.CancellationException) {
+                Log.w("BaiponBridge", "MediaController 任务被取消")
+                mediaControllerInitialized = false
+            }
+        }, ContextCompat.getMainExecutor(this))
     }
 
     override fun onStop() {
         super.onStop()
-        // 保留 mediaController 以便后续使用，只释放 Future
+        // 不释放 mediaController，保持后台播放
         try {
-            if (::controllerFuture.isInitialized) {
-                MediaController.releaseFuture(controllerFuture)
+            if (::controllerFuture.isInitialized && mediaControllerInitialized) {
+                // 只在明确不需要时才释放
+                mediaControllerInitialized = false
             }
         } catch (e: Exception) {
-            Log.w("BaiponBridge", "释放 MediaController 失败", e)
+            Log.w("BaiponBridge", "停止时出错", e)
         }
     }
 
@@ -345,9 +388,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        mainScope.cancel()
         super.onDestroy()
-        // 最后才清空 mediaController
+        // 清空 mediaController
         mediaController = null
+        mediaControllerInitialized = false
         try {
             if (::controllerFuture.isInitialized) {
                 MediaController.releaseFuture(controllerFuture)
