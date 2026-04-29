@@ -80,29 +80,96 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun playStream(streamUrl: String, stationName: String) { // 增加 stationName 参数
+        fun playStream(streamUrl: String, stationName: String) {
+            Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl")
             mainScope.launch {
                 ensureMediaControllerConnected {
-                    mediaController?.sendCustomCommand(
-                        androidx.media3.session.SessionCommand(
-                            PlaybackService.COMMAND_PLAY_STREAM,
-                            android.os.Bundle().apply {
-                                putString("url", streamUrl)
-                                putString("name", stationName) // 将名称放入 Bundle
-                            }
-                        ), android.os.Bundle.EMPTY
-                    )
-                    Log.d("BaiponBridge", "播放流: $stationName - $streamUrl")
+                    val metadata = androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(stationName)
+                        .setArtist("在线直播")
+                        .build()
+
+                    val mediaItem = androidx.media3.common.MediaItem.Builder()
+                        .setUri(streamUrl)
+                        .setMediaMetadata(metadata)
+                        .build()
+
+                    mediaController?.setMediaItem(mediaItem)
+                    mediaController?.prepare()
+                    mediaController?.play()
+
+                    // 只更新 UI，不控制网页 audio
+                    myWebView.post {
+                        myWebView.evaluateJavascript(
+                            "javascript:(function() { " +
+                                    "var statusText = document.getElementById('play-status'); " +
+                                    "if(statusText) statusText.innerText = '正在直播'; " +
+                                    "var masterBtn = document.getElementById('master-play-btn'); " +
+                                    "if(masterBtn) masterBtn.icon = 'pause'; " +
+                                    "var waveAnim = document.getElementById('playing-anim'); " +
+                                    "if(waveAnim) waveAnim.style.display = 'flex'; " +
+                                    "})()", null
+                        )
+                    }
+
+                    Log.d("BaiponBridge", "直接播放成功 - 名称: $stationName, URL: $streamUrl")
                 }
             }
         }
 
         @JavascriptInterface
+        fun onStationChanged(stationName: String, stationUrl: String) {
+            Log.d("BaiponBridge", "onStationChanged 被调用: $stationName - $stationUrl")
+            playStream(stationUrl, stationName)
+        }
+
+        @JavascriptInterface
         fun pauseStream() {
+            Log.d("BaiponBridge", "pauseStream 被调用")
             mainScope.launch {
                 mediaController?.pause()
-                Log.d("BaiponBridge", "暂停播放")
+                // 不要手动控制网页 audio，让状态观察器去同步
+                // 只更新 UI 文字和按钮图标
+                myWebView.post {
+                    myWebView.evaluateJavascript(
+                        "javascript:(function() { " +
+                                "var statusText = document.getElementById('play-status'); " +
+                                "if(statusText) statusText.innerText = '已暂停'; " +
+                                "var masterBtn = document.getElementById('master-play-btn'); " +
+                                "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
+                                "var waveAnim = document.getElementById('playing-anim'); " +
+                                "if(waveAnim) waveAnim.style.display = 'none'; " +
+                                "})()", null
+                    )
+                }
             }
+        }
+    }
+
+    // 统一更新网页 UI 的方法
+    private fun updateWebViewUI(isPlaying: Boolean, stationName: String?) {
+        myWebView.post {
+            val jsCode = if (isPlaying) {
+                "javascript:(function() { " +
+                        "var statusText = document.getElementById('play-status'); " +
+                        "if(statusText) statusText.innerText = '正在直播'; " +
+                        "var masterBtn = document.getElementById('master-play-btn'); " +
+                        "if(masterBtn) masterBtn.icon = 'pause'; " +
+                        "var waveAnim = document.getElementById('playing-anim'); " +
+                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
+                        "})()"
+            } else {
+                "javascript:(function() { " +
+                        "var statusText = document.getElementById('play-status'); " +
+                        "if(statusText) statusText.innerText = '已暂停'; " +
+                        "var masterBtn = document.getElementById('master-play-btn'); " +
+                        "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
+                        "var waveAnim = document.getElementById('playing-anim'); " +
+                        "if(waveAnim) waveAnim.style.display = 'none'; " +
+                        "})()"
+            }
+            myWebView.evaluateJavascript(jsCode, null)
+            Log.d("BaiponBridge", "更新网页 UI: ${if(isPlaying) "播放" else "暂停"}")
         }
     }
 
@@ -112,7 +179,7 @@ class MainActivity : AppCompatActivity() {
                 action()
             } else if (!mediaControllerInitialized) {
                 connectMediaController()
-                delay(500) // 等待连接建立
+                delay(500)
                 if (mediaController != null) {
                     action()
                 }
@@ -121,7 +188,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {  // Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
 
@@ -150,7 +217,6 @@ class MainActivity : AppCompatActivity() {
         checkUpdate(isManual = false)
         requestNotificationPermission()
 
-        // 启动 PlaybackService
         startPlaybackService()
     }
 
@@ -166,6 +232,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         connectMediaController()
+        startPlayStateObserver()
     }
 
     private fun connectMediaController() {
@@ -191,12 +258,56 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    // 监听播放状态变化，只更新 UI，不控制网页 audio 元素
+    private fun startPlayStateObserver() {
+        mainScope.launch {
+            var lastState = false
+            var lastStation = ""
+            while (true) {
+                delay(500)
+                mediaController?.let { controller ->
+                    val isPlaying = controller.isPlaying
+                    val mediaItem = controller.currentMediaItem
+                    val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
+
+                    // 当状态或电台改变时更新 UI
+                    if (lastState != isPlaying || lastStation != stationName) {
+                        lastState = isPlaying
+                        lastStation = stationName
+
+                        myWebView.post {
+                            val jsCode = if (isPlaying) {
+                                "javascript:(function() { " +
+                                        "var statusText = document.getElementById('play-status'); " +
+                                        "if(statusText) statusText.innerText = '正在直播'; " +
+                                        "var masterBtn = document.getElementById('master-play-btn'); " +
+                                        "if(masterBtn) masterBtn.icon = 'pause'; " +
+                                        "var waveAnim = document.getElementById('playing-anim'); " +
+                                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
+                                        "})()"
+                            } else {
+                                "javascript:(function() { " +
+                                        "var statusText = document.getElementById('play-status'); " +
+                                        "if(statusText) statusText.innerText = '已暂停'; " +
+                                        "var masterBtn = document.getElementById('master-play-btn'); " +
+                                        "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
+                                        "var waveAnim = document.getElementById('playing-anim'); " +
+                                        "if(waveAnim) waveAnim.style.display = 'none'; " +
+                                        "})()"
+                            }
+                            myWebView.evaluateJavascript(jsCode, null)
+                            Log.d("BaiponBridge", "同步 UI 状态: ${if(isPlaying) "播放" else "暂停"}, 电台: $stationName")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onStop() {
         super.onStop()
-        // 不释放 mediaController，保持后台播放
         try {
             if (::controllerFuture.isInitialized && mediaControllerInitialized) {
-                // 只在明确不需要时才释放
                 mediaControllerInitialized = false
             }
         } catch (e: Exception) {
@@ -254,42 +365,83 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 修改 MainActivity.kt 中的 script 字符串
             override fun onPageFinished(view: WebView?, url: String?) {
                 val script = """
         (function() {
             console.log('Baipon Radio Bridge injected');
-            var lastUrl = "";
-
-            function notifyPlay() {
-                var audio = document.querySelector('audio');
-                // 从网页 DOM 中抓取当前的电台名称
-                var stationNameElement = document.getElementById('current-name');
-                var stationName = (stationNameElement && stationNameElement.innerText.trim()) 
-                                  ? stationNameElement.innerText.trim() 
-                                  : "百品电台";
+            
+            // 保存当前选中的电台
+            var currentStation = null;
+            
+            // 覆盖全局的 play 函数
+            window.play = function(s, el) {
+                console.log('拦截 play 调用: ' + s.name);
+                currentStation = s;
                 
-                if (audio && (audio.src || audio.currentSrc)) {
-                    var realUrl = audio.currentSrc || audio.src;
-                    
-                    // 只有当 URL 有效且与上次不同时，才发送指令给 App
-                    if (realUrl.startsWith('http') && realUrl !== lastUrl) {
-                        // 必须调用 AndroidBridge (确保与 addJavascriptInterface 一致)
-                        if (window.AndroidBridge && window.AndroidBridge.playStream) {
-                            window.AndroidBridge.playStream(realUrl, stationName);
-                            lastUrl = realUrl;
-                            console.log('同步到 App: ' + stationName + ' -> ' + realUrl);
+                // 更新 UI 状态
+                document.querySelectorAll('.radio-item').forEach(i => i.classList.remove('active'));
+                if(el) el.classList.add('active');
+                document.getElementById('current-name').innerText = s.name;
+                
+                // 更新 logo
+                var logoBox = document.getElementById('player-logo');
+                if (logoBox) {
+                    logoBox.innerHTML = '<div class="dynamic-logo">' + (s.logo ? '<img src="' + s.logo + '" class="dynamic-logo">' : s.name.charAt(0)) + '</div>';
+                }
+                
+                // 通知原生播放
+                if (window.AndroidBridge && window.AndroidBridge.playStream) {
+                    console.log('通知原生播放: ' + s.name + ' - ' + s.url);
+                    window.AndroidBridge.playStream(s.url, s.name);
+                }
+                
+                // 更新播放状态显示
+                var statusText = document.getElementById('play-status');
+                if (statusText) statusText.innerText = "连接中...";
+            };
+            
+            // 覆盖播放/暂停按钮的事件
+            var masterBtn = document.getElementById('master-play-btn');
+            if (masterBtn) {
+                var newBtn = masterBtn.cloneNode(true);
+                masterBtn.parentNode.replaceChild(newBtn, masterBtn);
+                newBtn.onclick = function() {
+                    console.log('网页按钮被点击');
+                    if (window.AndroidBridge) {
+                        // 查看当前原生播放状态（通过 UI 判断）
+                        var statusText = document.getElementById('play-status');
+                        var isPlaying = statusText && statusText.innerText === '正在直播';
+                        
+                        if (isPlaying) {
+                            // 正在播放，执行暂停
+                            console.log('执行暂停');
+                            window.AndroidBridge.pauseStream();
+                        } else {
+                            // 已暂停，执行播放
+                            if (currentStation) {
+                                console.log('播放当前电台: ' + currentStation.name);
+                                window.play(currentStation, document.querySelector('.radio-item.active'));
+                            } else {
+                                var activeItem = document.querySelector('.radio-item.active');
+                                if (activeItem && activeItem.dataset.info) {
+                                    var station = JSON.parse(activeItem.dataset.info);
+                                    console.log('播放选中电台: ' + station.name);
+                                    window.play(station, activeItem);
+                                }
+                            }
                         }
                     }
-                }
+                };
             }
-
-            // 监听播放事件：当用户点击网页播放按钮时立即同步
-            document.addEventListener('play', notifyPlay, true);
-            document.addEventListener('playing', notifyPlay, true);
             
-            // 轮询检查：应对网页内部逻辑自动切换下一首的情况
-            setInterval(notifyPlay, 3000); 
+            // 记录当前选中的电台
+            var activeItem = document.querySelector('.radio-item.active');
+            if (activeItem && activeItem.dataset.info) {
+                currentStation = JSON.parse(activeItem.dataset.info);
+                console.log('当前选中电台: ' + currentStation.name);
+            }
+            
+            console.log('Bridge 注入完成');
         })();
     """.trimIndent()
 
@@ -405,7 +557,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         mainScope.cancel()
         super.onDestroy()
-        // 清空 mediaController
         mediaController = null
         mediaControllerInitialized = false
         try {
