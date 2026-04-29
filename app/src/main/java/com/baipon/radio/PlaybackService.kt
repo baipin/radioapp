@@ -27,6 +27,7 @@ class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private val NOTIFICATION_ID = 1
     private val NOTIFICATION_CHANNEL_ID = "baipon_radio_channel"
+    private var isServiceRunning = false
 
     companion object {
         const val COMMAND_PLAY_STREAM = "PLAY_STREAM"
@@ -34,6 +35,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d("BaiponBridge", "PlaybackService 已创建")
 
         // 初始化 ExoPlayer
         player = ExoPlayer.Builder(this).build()
@@ -72,6 +74,14 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             .build()
+
+        // 启动前台服务
+        if (!isServiceRunning) {
+            val notification = createInitialNotification()
+            startForeground(NOTIFICATION_ID, notification)
+            isServiceRunning = true
+            Log.d("BaiponBridge", "前台服务已启动")
+        }
     }
 
     // 创建通知渠道
@@ -83,13 +93,33 @@ class PlaybackService : MediaSessionService() {
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "显示正在播放的电台节目"
+                setShowBadge(false)
             }
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(channel)
         }
     }
 
-    // 创建通知
+    // 初始化通知（服务启动时）
+    private fun createInitialNotification(): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("百品电台")
+            .setContentText("待命中...")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(false)
+            .build()
+    }
+
+    // 创建播放通知
     private fun createNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -153,18 +183,6 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    // 启动前台服务
-    private fun startForegroundNotification() {
-        val notification = createNotification()
-        startForeground(NOTIFICATION_ID, notification)
-    }
-
-    // 更新通知
-    private fun updateNotification() {
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NOTIFICATION_ID, createNotification())
-    }
-
     // 播放直播流的核心方法
     private fun playStream(url: String) {
         val metadata = MediaMetadata.Builder()
@@ -181,9 +199,15 @@ class PlaybackService : MediaSessionService() {
         player.prepare()
         player.play()
 
-        // 启动前台服务并显示通知
-        startForegroundNotification()
+        // 更新前台服务通知
+        updateNotification()
         Log.d("BaiponBridge", "开始播放: $url")
+    }
+
+    // 更新通知
+    private fun updateNotification() {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, createNotification())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -199,7 +223,7 @@ class PlaybackService : MediaSessionService() {
                 Log.d("BaiponBridge", "通知栏暂停按钮被点击")
             }
         }
-        return super.onStartCommand(intent, flags, startId)
+        return START_STICKY
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -209,6 +233,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         player.release()
         mediaSession?.release()
+        isServiceRunning = false
         Log.d("BaiponBridge", "PlaybackService 已销毁")
         super.onDestroy()
     }
