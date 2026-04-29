@@ -82,6 +82,21 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun playStream(streamUrl: String, stationName: String) {
             Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl")
+
+            // 立即显示缓冲状态
+            myWebView.post {
+                myWebView.evaluateJavascript(
+                    "javascript:(function() { " +
+                            "var statusText = document.getElementById('play-status'); " +
+                            "if(statusText) statusText.innerText = '连接中...'; " +
+                            "var masterBtn = document.getElementById('master-play-btn'); " +
+                            "if(masterBtn) masterBtn.icon = 'pause'; " +
+                            "var waveAnim = document.getElementById('playing-anim'); " +
+                            "if(waveAnim) waveAnim.style.display = 'flex'; " +
+                            "})()", null
+                )
+            }
+
             mainScope.launch {
                 ensureMediaControllerConnected {
                     val metadata = androidx.media3.common.MediaMetadata.Builder()
@@ -97,20 +112,6 @@ class MainActivity : AppCompatActivity() {
                     mediaController?.setMediaItem(mediaItem)
                     mediaController?.prepare()
                     mediaController?.play()
-
-                    // 只更新 UI，不控制网页 audio
-                    myWebView.post {
-                        myWebView.evaluateJavascript(
-                            "javascript:(function() { " +
-                                    "var statusText = document.getElementById('play-status'); " +
-                                    "if(statusText) statusText.innerText = '正在直播'; " +
-                                    "var masterBtn = document.getElementById('master-play-btn'); " +
-                                    "if(masterBtn) masterBtn.icon = 'pause'; " +
-                                    "var waveAnim = document.getElementById('playing-anim'); " +
-                                    "if(waveAnim) waveAnim.style.display = 'flex'; " +
-                                    "})()", null
-                        )
-                    }
 
                     Log.d("BaiponBridge", "直接播放成功 - 名称: $stationName, URL: $streamUrl")
                 }
@@ -128,20 +129,7 @@ class MainActivity : AppCompatActivity() {
             Log.d("BaiponBridge", "pauseStream 被调用")
             mainScope.launch {
                 mediaController?.pause()
-                // 不要手动控制网页 audio，让状态观察器去同步
-                // 只更新 UI 文字和按钮图标
-                myWebView.post {
-                    myWebView.evaluateJavascript(
-                        "javascript:(function() { " +
-                                "var statusText = document.getElementById('play-status'); " +
-                                "if(statusText) statusText.innerText = '已暂停'; " +
-                                "var masterBtn = document.getElementById('master-play-btn'); " +
-                                "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
-                                "var waveAnim = document.getElementById('playing-anim'); " +
-                                "if(waveAnim) waveAnim.style.display = 'none'; " +
-                                "})()", null
-                    )
-                }
+                // 状态观察器会自动更新 UI，这里不需要手动更新
             }
         }
     }
@@ -248,6 +236,19 @@ class MainActivity : AppCompatActivity() {
             try {
                 mediaController = controllerFuture.get()
                 Log.d("BaiponBridge", "MediaController 连接成功")
+
+                // 添加播放状态监听
+                mediaController?.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        Log.d("BaiponBridge", "PlaybackState 改变: $playbackState")
+                        // 状态观察器会处理，这里不需要额外操作
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        Log.d("BaiponBridge", "isPlaying 改变: $isPlaying")
+                    }
+                })
+
             } catch (e: ExecutionException) {
                 Log.e("BaiponBridge", "MediaController 连接失败", e)
                 mediaControllerInitialized = false
@@ -257,27 +258,34 @@ class MainActivity : AppCompatActivity() {
             }
         }, ContextCompat.getMainExecutor(this))
     }
-
     // 监听播放状态变化，只更新 UI，不控制网页 audio 元素
     private fun startPlayStateObserver() {
         mainScope.launch {
-            var lastState = false
+            var lastState = -1  // 0=暂停, 1=播放, 2=缓冲
             var lastStation = ""
             while (true) {
-                delay(500)
+                delay(300)  // 缩短到 300ms 让状态响应更快
                 mediaController?.let { controller ->
+                    val playbackState = controller.playbackState
                     val isPlaying = controller.isPlaying
                     val mediaItem = controller.currentMediaItem
                     val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
 
+                    // 确定当前状态
+                    val currentState = when {
+                        playbackState == androidx.media3.common.Player.STATE_BUFFERING -> 2  // 缓冲中
+                        isPlaying -> 1  // 播放中
+                        else -> 0  // 暂停
+                    }
+
                     // 当状态或电台改变时更新 UI
-                    if (lastState != isPlaying || lastStation != stationName) {
-                        lastState = isPlaying
+                    if (lastState != currentState || lastStation != stationName) {
+                        lastState = currentState
                         lastStation = stationName
 
                         myWebView.post {
-                            val jsCode = if (isPlaying) {
-                                "javascript:(function() { " +
+                            val jsCode = when (currentState) {
+                                1 -> "javascript:(function() { " +
                                         "var statusText = document.getElementById('play-status'); " +
                                         "if(statusText) statusText.innerText = '正在直播'; " +
                                         "var masterBtn = document.getElementById('master-play-btn'); " +
@@ -285,8 +293,15 @@ class MainActivity : AppCompatActivity() {
                                         "var waveAnim = document.getElementById('playing-anim'); " +
                                         "if(waveAnim) waveAnim.style.display = 'flex'; " +
                                         "})()"
-                            } else {
-                                "javascript:(function() { " +
+                                2 -> "javascript:(function() { " +
+                                        "var statusText = document.getElementById('play-status'); " +
+                                        "if(statusText) statusText.innerText = '缓冲中...'; " +
+                                        "var masterBtn = document.getElementById('master-play-btn'); " +
+                                        "if(masterBtn) masterBtn.icon = 'pause'; " +
+                                        "var waveAnim = document.getElementById('playing-anim'); " +
+                                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
+                                        "})()"
+                                else -> "javascript:(function() { " +
                                         "var statusText = document.getElementById('play-status'); " +
                                         "if(statusText) statusText.innerText = '已暂停'; " +
                                         "var masterBtn = document.getElementById('master-play-btn'); " +
@@ -296,7 +311,12 @@ class MainActivity : AppCompatActivity() {
                                         "})()"
                             }
                             myWebView.evaluateJavascript(jsCode, null)
-                            Log.d("BaiponBridge", "同步 UI 状态: ${if(isPlaying) "播放" else "暂停"}, 电台: $stationName")
+                            val stateDesc = when (currentState) {
+                                1 -> "播放"
+                                2 -> "缓冲"
+                                else -> "暂停"
+                            }
+                            Log.d("BaiponBridge", "同步 UI 状态: $stateDesc, 电台: $stationName")
                         }
                     }
                 }
