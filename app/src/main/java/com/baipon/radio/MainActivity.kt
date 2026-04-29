@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.webkit.*
@@ -130,24 +131,33 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // 连接 MediaSessionService
-        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+        // 只在 mediaController 为 null 时初始化
+        if (mediaController == null) {
+            val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+            controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
 
-        controllerFuture.addListener({
-            try {
-                mediaController = controllerFuture.get()
-            } catch (e: ExecutionException) {
-                e.printStackTrace()
-            }
-        }, ContextCompat.getMainExecutor(this))
+            controllerFuture.addListener({
+                try {
+                    mediaController = controllerFuture.get()
+                } catch (e: ExecutionException) {
+                    Log.e("BaiponBridge", "MediaController 连接失败", e)
+                } catch (e: java.util.concurrent.CancellationException) {
+                    Log.w("BaiponBridge", "MediaController 任务被取消")
+                }
+            }, ContextCompat.getMainExecutor(this))
+        }
     }
 
     override fun onStop() {
-        // 释放 MediaController
-        MediaController.releaseFuture(controllerFuture)
-        mediaController = null
         super.onStop()
+        // 保留 mediaController 以便后续使用，只释放 Future
+        try {
+            if (::controllerFuture.isInitialized) {
+                MediaController.releaseFuture(controllerFuture)
+            }
+        } catch (e: Exception) {
+            Log.w("BaiponBridge", "释放 MediaController 失败", e)
+        }
     }
 
     private fun setupWindowDisplay() {
@@ -336,9 +346,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 额外保险释放
-        if (::controllerFuture.isInitialized) {
-            MediaController.releaseFuture(controllerFuture)
+        // 最后才清空 mediaController
+        mediaController = null
+        try {
+            if (::controllerFuture.isInitialized) {
+                MediaController.releaseFuture(controllerFuture)
+            }
+        } catch (e: Exception) {
+            Log.w("BaiponBridge", "销毁时释放失败", e)
         }
     }
 }
