@@ -27,33 +27,38 @@ class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private val NOTIFICATION_ID = 1
     private val NOTIFICATION_CHANNEL_ID = "baipon_radio_channel"
+    
+    // 保存当前播放URL
+    private var currentStreamUrl: String? = null
 
     companion object {
         const val COMMAND_PLAY_STREAM = "PLAY_STREAM"
+        
+        // 添加Service Action
+        const val ACTION_PLAY = "PLAY_ACTION"
+        const val ACTION_PAUSE = "PAUSE_ACTION"
+        
+        // 启动Service的Intent
+        fun startService(context: Context) {
+            val intent = Intent(context, PlaybackService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d("BaiponBridge", "PlaybackService onCreate 开始")
+        Log.d("BaiponBridge", "PlaybackService onCreate")
 
-        // 初始化 ExoPlayer
         player = ExoPlayer.Builder(this).build()
-
-        // 创建通知渠道（Android 8.0+）
         createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createInitialNotification())
 
-        // 创建 PendingIntent，点击通知栏可返回 App
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        // 创建 MediaSession 并设置回调
         mediaSession = MediaSession.Builder(this, player)
             .setId("BaiponRadioSession")
-            .setSessionActivity(pendingIntent)
             .setCallback(object : MediaSession.Callback {
                 override fun onCustomCommand(
                     session: MediaSession,
@@ -61,7 +66,6 @@ class PlaybackService : MediaSessionService() {
                     customCommand: SessionCommand,
                     args: Bundle
                 ): ListenableFuture<SessionResult> {
-
                     if (customCommand.customAction == COMMAND_PLAY_STREAM) {
                         val url = args.getString("url")
                         if (!url.isNullOrEmpty()) {
@@ -73,14 +77,28 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             .build()
-
-        // 启动前台服务 - 必须在 onCreate 中完成
-        val notification = createInitialNotification()
-        startForeground(NOTIFICATION_ID, notification)
-        Log.d("BaiponBridge", "前台服务已启动，通知已显示")
     }
 
-    // 创建通知渠道
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("BaiponBridge", "onStartCommand action: ${intent?.action}")
+        
+        when (intent?.action) {
+            ACTION_PLAY -> {
+                // 如果有保存的URL，恢复播放
+                currentStreamUrl?.let { 
+                    playStream(it)
+                } ?: run {
+                    Log.w("BaiponBridge", "没有保存的播放流")
+                }
+            }
+            ACTION_PAUSE -> {
+                player.pause()
+                updateNotification()
+            }
+        }
+        return START_STICKY  // 保持Service存活
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -88,16 +106,13 @@ class PlaybackService : MediaSessionService() {
                 "百品电台",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "显示正在播放的电台节目"
+                description = "控制电台播放"
                 setShowBadge(false)
             }
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-            Log.d("BaiponBridge", "通知渠道已创建")
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
-    // 初始化通知（服务启动时）
     private fun createInitialNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -108,7 +123,7 @@ class PlaybackService : MediaSessionService() {
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("百品电台")
-            .setContentText("待命中...")
+            .setContentText("后台运行中")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -116,7 +131,6 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    // 创建播放通知
     private fun createNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -125,55 +139,34 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // 暂停 Action
-        val pauseIntent = Intent(this, PlaybackService::class.java).apply {
-            action = "PAUSE_ACTION"
+        val isPlaying = player.isPlaying
+        
+        // 使用明确的Intent，而不是隐式action
+        val controlIntent = Intent(this, PlaybackService::class.java).apply {
+            action = if (isPlaying) ACTION_PAUSE else ACTION_PLAY
         }
-        val pausePendingIntent = PendingIntent.getService(
+        val controlPendingIntent = PendingIntent.getService(
             this,
             0,
-            pauseIntent,
+            controlIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // 播放 Action
-        val playIntent = Intent(this, PlaybackService::class.java).apply {
-            action = "PLAY_ACTION"
-        }
-        val playPendingIntent = PendingIntent.getService(
-            this,
-            1,
-            playIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val playPauseAction = NotificationCompat.Action(
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (isPlaying) "暂停" else "播放",
+            controlPendingIntent
         )
-
-        val isPlaying = player.isPlaying
-        val playPauseAction = if (isPlaying) {
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_pause,
-                "暂停",
-                pausePendingIntent
-            )
-        } else {
-            NotificationCompat.Action(
-                android.R.drawable.ic_media_play,
-                "播放",
-                playPendingIntent
-            )
-        }
 
         val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("百品电台")
-            .setContentText(
-                if (isPlaying) "正在播放..." else "已暂停"
-            )
+            .setContentText(if (isPlaying) "正在播放" else "已暂停")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .addAction(playPauseAction)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(isPlaying)
 
-        // 如果 mediaSession 不为空，添加 MediaStyle
         mediaSession?.let { session ->
             builder.setStyle(
                 androidx.media3.session.MediaStyleNotificationHelper
@@ -185,24 +178,22 @@ class PlaybackService : MediaSessionService() {
         return builder.build()
     }
 
-    // 播放直播流的核心方法
     private fun playStream(url: String) {
+        currentStreamUrl = url  // 保存URL，用于恢复播放
         try {
-            val metadata = MediaMetadata.Builder()
-                .setTitle("百品电台")
-                .setArtist("在线直播")
-                .build()
-
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
-                .setMediaMetadata(metadata)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle("百品电台")
+                        .setArtist("在线直播")
+                        .build()
+                )
                 .build()
 
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
-
-            // 更新前台服务通知
             updateNotification()
             Log.d("BaiponBridge", "开始播放: $url")
         } catch (e: Exception) {
@@ -210,7 +201,6 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    // 更新通知
     private fun updateNotification() {
         try {
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -220,52 +210,13 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("BaiponBridge", "PlaybackService onStartCommand, action: ${intent?.action}")
-        
-        when (intent?.action) {
-            "PLAY_ACTION" -> {
-                player.play()
-                updateNotification()
-                Log.d("BaiponBridge", "通知栏播放按钮被点击")
-            }
-            "PAUSE_ACTION" -> {
-                player.pause()
-                updateNotification()
-                Log.d("BaiponBridge", "通知栏暂停按钮被点击")
-            }
-        }
-        return START_STICKY
-    }
-
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            "PLAY_ACTION" -> {
-                player.play()
-                updateNotification()
-                Log.d("BaiponBridge", "通知栏播放按钮被点击")
-            }
-            "PAUSE_ACTION" -> {
-                player.pause()
-                updateNotification()
-                Log.d("BaiponBridge", "通知栏暂停按钮被点击")
-            }
-        }
-        return START_STICKY
-    }
-
     override fun onDestroy() {
-        Log.d("BaiponBridge", "PlaybackService onDestroy")
-        try {
-            player.release()
-            mediaSession?.release()
-        } catch (e: Exception) {
-            Log.e("BaiponBridge", "销毁 Service 时出错: ${e.message}")
-        }
         super.onDestroy()
+        player.release()
+        mediaSession?.release()
     }
 }
