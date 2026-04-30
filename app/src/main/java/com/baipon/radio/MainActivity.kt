@@ -101,7 +101,7 @@ class MainActivity : AppCompatActivity() {
                 ensureMediaControllerConnected {
                     val metadata = androidx.media3.common.MediaMetadata.Builder()
                         .setTitle(stationName)
-                        .setArtist("在线直播")
+                        .setArtist("百品电台")
                         .build()
 
                     val mediaItem = androidx.media3.common.MediaItem.Builder()
@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
         myWebView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url.toString()
-                return if (url.contains("baipon.com")) {
+                return if (url.contains("radio.baipon.com")) {
                     false
                 } else {
                     try {
