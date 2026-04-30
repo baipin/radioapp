@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- 添加电台 -->
+    <item
+        android:id="@+id/menu_add_station"
+        android:icon="@drawable/ic_outline_add_circle_outline_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="添加电台"
+        app:showAsAction="ifRoom" />
+
+    <!-- 刷新电台 -->
+    <item
+        android:id="@+id/menu_refresh"
+        android:icon="@drawable/ic_outline_refresh_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="刷新电台"
+        app:showAsAction="never" />
+
+    <!-- 主题切换 -->
+    <item
+        android:id="@+id/menu_theme"
+        android:icon="@drawable/ic_outline_dark_mode_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="深色模式"
+        app:showAsAction="never" />
+
+    <!-- 管理模式 (进入) -->
+    <item
+        android:id="@+id/menu_admin"
+        android:icon="@drawable/ic_outline_edit_note_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="管理模式"
+        app:showAsAction="never" />
+
+    <!-- 退出管理模式 (默认隐藏) -->
+    <item
+        android:id="@+id/menu_exit_admin"
+        android:icon="@drawable/ic_outline_close_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="退出编辑"
+        android:visible="false"
+        app:showAsAction="always|withText" />
+
+    <!-- 应用设置 -->
+    <item
+        android:id="@+id/menu_settings"
+        android:icon="@drawable/ic_outline_settings_24"
+        app:iconTint="?attr/colorControlNormal"
+        android:title="应用设置"
+        app:showAsAction="never" />
+</menu>

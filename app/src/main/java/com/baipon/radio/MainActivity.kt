@@ -5,6 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -17,20 +19,27 @@ import android.webkit.*
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import kotlinx.coroutines.*
 import java.util.concurrent.ExecutionException
 
+@OptIn(UnstableApi::class)
 class MainActivity : AppCompatActivity() {
 
     private lateinit var myWebView: WebView
@@ -80,8 +89,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun playStream(streamUrl: String, stationName: String) {
-            Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl")
+        fun playStream(streamUrl: String, stationName: String, logoUrl: String = "") {
+            Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl - Logo: $logoUrl")
 
             // 立即显示缓冲状态
             myWebView.post {
@@ -99,12 +108,36 @@ class MainActivity : AppCompatActivity() {
 
             mainScope.launch {
                 ensureMediaControllerConnected {
-                    val metadata = androidx.media3.common.MediaMetadata.Builder()
+                    val metadataBuilder = MediaMetadata.Builder()
                         .setTitle(stationName)
                         .setArtist("百品电台")
-                        .build()
 
-                    val mediaItem = androidx.media3.common.MediaItem.Builder()
+                    // 只有当 logoUrl 有效且不是空字符串时才尝试加载
+                    if (logoUrl.isNotEmpty() && logoUrl.startsWith("http")) {
+                        try {
+                            val bitmap = withContext(Dispatchers.IO) {
+                                val url = URL(logoUrl)
+                                val connection = url.openConnection()
+                                connection.connectTimeout = 5000
+                                connection.doInput = true
+                                val inputStream = connection.getInputStream()
+                                android.graphics.BitmapFactory.decodeStream(inputStream)
+                            }
+                            if (bitmap != null) {
+                                metadataBuilder.setArtworkData(bitmap.toByteArray(), 1)
+                            } else {
+                                Log.d("BaiponBridge", "图片解码失败，使用默认图标")
+                            }
+                        } catch (e: Exception) {
+                            Log.d("BaiponBridge", "加载 Logo 失败: ${e.message}，使用默认图标")
+                        }
+                    } else {
+                        Log.d("BaiponBridge", "无有效 Logo URL，使用默认图标")
+                    }
+
+                    val metadata = metadataBuilder.build()
+
+                    val mediaItem = MediaItem.Builder()
                         .setUri(streamUrl)
                         .setMediaMetadata(metadata)
                         .build()
@@ -113,15 +146,15 @@ class MainActivity : AppCompatActivity() {
                     mediaController?.prepare()
                     mediaController?.play()
 
-                    Log.d("BaiponBridge", "直接播放成功 - 名称: $stationName, URL: $streamUrl")
+                    Log.d("BaiponBridge", "播放成功 - 名称: $stationName, URL: $streamUrl")
                 }
             }
         }
 
         @JavascriptInterface
-        fun onStationChanged(stationName: String, stationUrl: String) {
-            Log.d("BaiponBridge", "onStationChanged 被调用: $stationName - $stationUrl")
-            playStream(stationUrl, stationName)
+        fun onStationChanged(stationName: String, stationUrl: String, logoUrl: String = "") {
+            Log.d("BaiponBridge", "onStationChanged 被调用: $stationName - $stationUrl - Logo: $logoUrl")
+            playStream(stationUrl, stationName, logoUrl)
         }
 
         @JavascriptInterface
@@ -129,36 +162,15 @@ class MainActivity : AppCompatActivity() {
             Log.d("BaiponBridge", "pauseStream 被调用")
             mainScope.launch {
                 mediaController?.pause()
-                // 状态观察器会自动更新 UI，这里不需要手动更新
             }
         }
     }
 
-    // 统一更新网页 UI 的方法
-    private fun updateWebViewUI(isPlaying: Boolean, stationName: String?) {
-        myWebView.post {
-            val jsCode = if (isPlaying) {
-                "javascript:(function() { " +
-                        "var statusText = document.getElementById('play-status'); " +
-                        "if(statusText) statusText.innerText = '正在直播'; " +
-                        "var masterBtn = document.getElementById('master-play-btn'); " +
-                        "if(masterBtn) masterBtn.icon = 'pause'; " +
-                        "var waveAnim = document.getElementById('playing-anim'); " +
-                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
-                        "})()"
-            } else {
-                "javascript:(function() { " +
-                        "var statusText = document.getElementById('play-status'); " +
-                        "if(statusText) statusText.innerText = '已暂停'; " +
-                        "var masterBtn = document.getElementById('master-play-btn'); " +
-                        "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
-                        "var waveAnim = document.getElementById('playing-anim'); " +
-                        "if(waveAnim) waveAnim.style.display = 'none'; " +
-                        "})()"
-            }
-            myWebView.evaluateJavascript(jsCode, null)
-            Log.d("BaiponBridge", "更新网页 UI: ${if(isPlaying) "播放" else "暂停"}")
-        }
+    // 将 Bitmap 转换为 ByteArray
+    private fun Bitmap.toByteArray(): ByteArray {
+        val stream = java.io.ByteArrayOutputStream()
+        this.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        return stream.toByteArray()
     }
 
     private suspend fun ensureMediaControllerConnected(action: suspend () -> Unit) {
@@ -197,10 +209,21 @@ class MainActivity : AppCompatActivity() {
         setupWindowDisplay()
         setContentView(R.layout.activity_main)
 
-        setupWebView()
-        findViewById<FloatingActionButton>(R.id.fab_settings).setOnClickListener {
-            showSettingsMenu(it)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val windowController = WindowInsetsControllerCompat(window, window.decorView)
+            // 根据当前是否是深色模式切换图标颜色
+            val isNightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+            // 如果不是深色模式（即白天模式），则将状态栏文字设为黑色（true）
+            windowController.isAppearanceLightStatusBars = !isNightMode
         }
+
+        setupWebView()
+
+        // 绑定 FAB 并设置点击事件
+        findViewById<FloatingActionButton>(R.id.fab_settings).setOnClickListener { view ->
+            showFabMenu(view)
+        }
+
         setupBackNavigation()
         checkUpdate(isManual = false)
         requestNotificationPermission()
@@ -237,11 +260,9 @@ class MainActivity : AppCompatActivity() {
                 mediaController = controllerFuture.get()
                 Log.d("BaiponBridge", "MediaController 连接成功")
 
-                // 添加播放状态监听
-                mediaController?.addListener(object : androidx.media3.common.Player.Listener {
+                mediaController?.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         Log.d("BaiponBridge", "PlaybackState 改变: $playbackState")
-                        // 状态观察器会处理，这里不需要额外操作
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -258,27 +279,25 @@ class MainActivity : AppCompatActivity() {
             }
         }, ContextCompat.getMainExecutor(this))
     }
-    // 监听播放状态变化，只更新 UI，不控制网页 audio 元素
+
     private fun startPlayStateObserver() {
         mainScope.launch {
-            var lastState = -1  // 0=暂停, 1=播放, 2=缓冲
+            var lastState = -1
             var lastStation = ""
             while (true) {
-                delay(300)  // 缩短到 300ms 让状态响应更快
+                delay(300)
                 mediaController?.let { controller ->
                     val playbackState = controller.playbackState
                     val isPlaying = controller.isPlaying
                     val mediaItem = controller.currentMediaItem
                     val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
 
-                    // 确定当前状态
                     val currentState = when {
-                        playbackState == androidx.media3.common.Player.STATE_BUFFERING -> 2  // 缓冲中
-                        isPlaying -> 1  // 播放中
-                        else -> 0  // 暂停
+                        playbackState == Player.STATE_BUFFERING -> 2
+                        isPlaying -> 1
+                        else -> 0
                     }
 
-                    // 当状态或电台改变时更新 UI
                     if (lastState != currentState || lastStation != stationName) {
                         lastState = currentState
                         lastStation = stationName
@@ -311,12 +330,6 @@ class MainActivity : AppCompatActivity() {
                                         "})()"
                             }
                             myWebView.evaluateJavascript(jsCode, null)
-                            val stateDesc = when (currentState) {
-                                1 -> "播放"
-                                2 -> "缓冲"
-                                else -> "暂停"
-                            }
-                            Log.d("BaiponBridge", "同步 UI 状态: $stateDesc, 电台: $stationName")
                         }
                     }
                 }
@@ -362,7 +375,61 @@ class MainActivity : AppCompatActivity() {
         }
 
         myWebView.addJavascriptInterface(WebAppInterface(), "AndroidBridge")
-        myWebView.webChromeClient = WebChromeClient()
+        myWebView.webChromeClient = object : WebChromeClient() {
+            override fun onJsAlert(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setMessage(message)
+                    .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                    .setCancelable(false)
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult?
+            ): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setMessage(message)
+                    .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                    .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsPrompt(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                defaultValue: String?,
+                result: JsPromptResult?
+            ): Boolean {
+                val input = android.widget.EditText(this@MainActivity)
+                input.setText(defaultValue)
+
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setMessage(message)
+                    .setView(input)
+                    .setPositiveButton("确定") { _, _ ->
+                        result?.confirm(input.text.toString())
+                    }
+                    .setNegativeButton("取消") { _, _ ->
+                        result?.cancel()
+                    }
+                    .show()
+                return true
+            }
+        }
 
         myWebView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -387,82 +454,286 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 val script = """
-        (function() {
-            console.log('Baipon Radio Bridge injected');
+    (function() {
+        console.log('Baipon Radio Bridge injecting...');
+        
+        // ========== 1. 只隐藏导航栏右侧的管理按钮，不影响播放器 ==========
+        // 原网页: .nav-content > div:last-child 包含了 settings, add, refresh, theme-toggle 按钮
+        var navRightButtons = document.querySelector('.nav-content > div:last-child');
+        if (navRightButtons) {
+            navRightButtons.style.display = 'none';
+            console.log('已隐藏导航栏右侧按钮组');
+        }
+        
+        // ========== 2. 隐藏音量控件（不影响收藏按钮）==========
+        var volumeBox = document.querySelector('.volume-box');
+        if (volumeBox) {
+            volumeBox.style.display = 'none';
+            console.log('已隐藏音量控件');
+        }
+        
+        // ========== 3. 修复播放器布局（保持收藏按钮可见）==========
+        var playerCard = document.querySelector('.player-card');
+        if (playerCard) {
+            playerCard.style.flexWrap = 'wrap';
+            playerCard.style.gap = '10px';
+            // 确保播放器卡片内所有元素都可见
+            playerCard.style.display = 'flex';
+            playerCard.style.alignItems = 'center';
+        }
+        
+        // 让标题区域可以换行，但不影响收藏按钮
+        var titleContainer = document.querySelector('.player-card > div:first-of-type + div');
+        if (titleContainer) {
+            titleContainer.style.flex = '1';
+            titleContainer.style.minWidth = '100px';
+            // 确保收藏按钮在标题容器内可见
+            var favBtnInTitle = titleContainer.querySelector('#fav-btn-main');
+            if (favBtnInTitle) {
+                favBtnInTitle.style.display = 'inline-flex';
+            }
+        }
+        
+        var currentNameSpan = document.getElementById('current-name');
+        if (currentNameSpan) {
+            currentNameSpan.style.whiteSpace = 'normal';
+            currentNameSpan.style.wordBreak = 'break-word';
+            currentNameSpan.style.fontSize = '1rem';
+        }
+        
+        // ========== 4. 强制确保收藏按钮可见 ==========
+        function ensureFavoriteButtonVisible() {
+            var favBtn = document.getElementById('fav-btn-main');
+            if (favBtn) {
+                favBtn.style.display = 'inline-flex !important';
+                favBtn.style.visibility = 'visible';
+                favBtn.style.opacity = '1';
+                favBtn.style.position = 'relative';
+                favBtn.style.zIndex = '100';
+                console.log('已强制显示收藏按钮');
+                return true;
+            } else {
+                console.log('未找到收藏按钮元素');
+                return false;
+            }
+        }
+        
+        // ========== 5. 添加 CSS 强制规则 ==========
+        var style = document.createElement('style');
+        style.textContent = `
+            #fav-btn-main {
+                display: inline-flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+            .player-card #fav-btn-main {
+                display: inline-flex !important;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // ========== 6. 保存当前选中的电台 ==========
+        var currentStation = null;
+        var activeItem = document.querySelector('.radio-item.active');
+        if (activeItem && activeItem.dataset.info) {
+            try {
+                currentStation = JSON.parse(activeItem.dataset.info);
+                console.log('当前选中电台: ' + currentStation.name);
+            } catch(e) {}
+        }
+        
+        // ========== 7. 覆盖 play 函数 ==========
+        window.play = function(s, el) {
+            console.log('play 被调用: ' + s.name);
+            currentStation = s;
             
-            // 保存当前选中的电台
-            var currentStation = null;
+            // 更新 UI
+            document.querySelectorAll('.radio-item').forEach(function(i) {
+                i.classList.remove('active');
+            });
+            if (el) el.classList.add('active');
+            var nameSpan = document.getElementById('current-name');
+            if (nameSpan) nameSpan.innerText = s.name;
             
-            // 覆盖全局的 play 函数
-            window.play = function(s, el) {
-                console.log('拦截 play 调用: ' + s.name);
-                currentStation = s;
-                
-                // 更新 UI 状态
-                document.querySelectorAll('.radio-item').forEach(i => i.classList.remove('active'));
-                if(el) el.classList.add('active');
-                document.getElementById('current-name').innerText = s.name;
-                
-                // 更新 logo
-                var logoBox = document.getElementById('player-logo');
-                if (logoBox) {
-                    logoBox.innerHTML = '<div class="dynamic-logo">' + (s.logo ? '<img src="' + s.logo + '" class="dynamic-logo">' : s.name.charAt(0)) + '</div>';
+            var logoBox = document.getElementById('player-logo');
+            if (logoBox) {
+                logoBox.innerHTML = '<div class="dynamic-logo">' + (s.logo ? '<img src="' + s.logo + '" class="dynamic-logo">' : s.name.charAt(0)) + '</div>';
+            }
+            
+            var statusText = document.getElementById('play-status');
+            if (statusText) statusText.innerText = "连接中...";
+            
+            // 更新收藏按钮状态
+            setTimeout(function() {
+                var favBtn = document.getElementById('fav-btn-main');
+                if (favBtn && s) {
+                    var favorites = JSON.parse(localStorage.getItem('bp_radios_favs') || '[]');
+                    var isFav = favorites.includes(s.url);
+                    favBtn.icon = isFav ? 'favorite' : 'favorite_border';
+                    ensureFavoriteButtonVisible();
                 }
-                
-                // 通知原生播放
-                if (window.AndroidBridge && window.AndroidBridge.playStream) {
-                    console.log('通知原生播放: ' + s.name + ' - ' + s.url);
-                    window.AndroidBridge.playStream(s.url, s.name);
-                }
-                
-                // 更新播放状态显示
-                var statusText = document.getElementById('play-status');
-                if (statusText) statusText.innerText = "连接中...";
-            };
+            }, 50);
             
-            // 覆盖播放/暂停按钮的事件
-            var masterBtn = document.getElementById('master-play-btn');
-            if (masterBtn) {
-                var newBtn = masterBtn.cloneNode(true);
-                masterBtn.parentNode.replaceChild(newBtn, masterBtn);
-                newBtn.onclick = function() {
-                    console.log('网页按钮被点击');
-                    if (window.AndroidBridge) {
-                        // 查看当前原生播放状态（通过 UI 判断）
-                        var statusText = document.getElementById('play-status');
-                        var isPlaying = statusText && statusText.innerText === '正在直播';
-                        
-                        if (isPlaying) {
-                            // 正在播放，执行暂停
-                            console.log('执行暂停');
-                            window.AndroidBridge.pauseStream();
+            // 通知原生播放
+            if (window.AndroidBridge && window.AndroidBridge.playStream) {
+                window.AndroidBridge.playStream(s.url, s.name, s.logo || "");
+            }
+        };
+        
+        // ========== 8. 重新绑定播放按钮 ==========
+        var masterBtn = document.getElementById('master-play-btn');
+        if (masterBtn) {
+            var newBtn = masterBtn.cloneNode(true);
+            masterBtn.parentNode.replaceChild(newBtn, masterBtn);
+            masterBtn = newBtn;
+            
+            masterBtn.onclick = function() {
+                console.log('播放按钮被点击');
+                if (window.AndroidBridge) {
+                    var statusText = document.getElementById('play-status');
+                    var isPlaying = statusText && (statusText.innerText === '正在直播' || statusText.innerText === '缓冲中...');
+                    
+                    if (isPlaying) {
+                        console.log('调用暂停');
+                        window.AndroidBridge.pauseStream();
+                    } else {
+                        console.log('调用播放');
+                        if (currentStation) {
+                            window.play(currentStation, document.querySelector('.radio-item.active'));
                         } else {
-                            // 已暂停，执行播放
-                            if (currentStation) {
-                                console.log('播放当前电台: ' + currentStation.name);
-                                window.play(currentStation, document.querySelector('.radio-item.active'));
-                            } else {
-                                var activeItem = document.querySelector('.radio-item.active');
-                                if (activeItem && activeItem.dataset.info) {
+                            var activeItem = document.querySelector('.radio-item.active');
+                            if (activeItem && activeItem.dataset.info) {
+                                try {
                                     var station = JSON.parse(activeItem.dataset.info);
-                                    console.log('播放选中电台: ' + station.name);
                                     window.play(station, activeItem);
-                                }
+                                } catch(e) {}
                             }
                         }
                     }
+                }
+            };
+            console.log('播放按钮已重新绑定');
+        }
+        
+        // ========== 9. 重新绑定收藏按钮（添加自动刷新）==========
+        function rebindFavorite() {
+            var favBtn = document.getElementById('fav-btn-main');
+            if (favBtn) {
+                // 移除原有事件，重新绑定
+                var newFavBtn = favBtn.cloneNode(true);
+                favBtn.parentNode.replaceChild(newFavBtn, favBtn);
+                favBtn = newFavBtn;
+                
+                favBtn.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('收藏按钮被点击');
+                    
+                    if (currentStation) {
+                        var favorites = JSON.parse(localStorage.getItem('bp_radios_favs') || '[]');
+                        var index = favorites.indexOf(currentStation.url);
+                        
+                        if (index > -1) {
+                            favorites.splice(index, 1);
+                            favBtn.icon = 'favorite_border';
+                            console.log('已取消收藏: ' + currentStation.name);
+                            // 显示提示
+                            if (window.AndroidBridge && window.AndroidBridge.showToast) {
+                                window.AndroidBridge.showToast('已取消收藏: ' + currentStation.name);
+                            }
+                        } else {
+                            favorites.push(currentStation.url);
+                            favBtn.icon = 'favorite';
+                            console.log('已添加收藏: ' + currentStation.name);
+                            if (window.AndroidBridge && window.AndroidBridge.showToast) {
+                                window.AndroidBridge.showToast('已添加收藏: ' + currentStation.name);
+                            }
+                        }
+                        
+                        localStorage.setItem('bp_radios_favs', JSON.stringify(favorites));
+                        
+                        // ========== 关键修改：收藏后自动刷新列表 ==========
+                        if (typeof refresh === 'function') {
+                            // 保存当前分类
+                            var currentFilterBackup = window.currentFilter;
+                            // 刷新列表
+                            refresh();
+                            // 恢复当前播放的电台高亮
+                            setTimeout(function() {
+                                if (currentStation) {
+                                    var items = document.querySelectorAll('.radio-item');
+                                    for (var i = 0; i < items.length; i++) {
+                                        var item = items[i];
+                                        if (item.dataset.info) {
+                                            try {
+                                                var station = JSON.parse(item.dataset.info);
+                                                if (station.url === currentStation.url) {
+                                                    item.classList.add('active');
+                                                    break;
+                                                }
+                                            } catch(e) {}
+                                        }
+                                    }
+                                }
+                                // 重新绑定按钮
+                                rebindFavorite();
+                            }, 100);
+                        }
+                    } else {
+                        console.log('请先选择一个电台');
+                        if (window.AndroidBridge && window.AndroidBridge.showToast) {
+                            window.AndroidBridge.showToast('请先选择一个电台');
+                        }
+                    }
                 };
+                
+                ensureFavoriteButtonVisible();
+                console.log('收藏按钮已重新绑定');
             }
-            
-            // 记录当前选中的电台
-            var activeItem = document.querySelector('.radio-item.active');
-            if (activeItem && activeItem.dataset.info) {
-                currentStation = JSON.parse(activeItem.dataset.info);
-                console.log('当前选中电台: ' + currentStation.name);
-            }
-            
-            console.log('Bridge 注入完成');
-        })();
+        }
+        
+        // ========== 10. 初始化 ==========
+        setTimeout(function() {
+            ensureFavoriteButtonVisible();
+            rebindFavorite();
+            // 每隔2秒检查一次，确保收藏按钮不会被隐藏
+            setInterval(function() {
+                var favBtn = document.getElementById('fav-btn-main');
+                if (favBtn && (favBtn.style.display === 'none' || getComputedStyle(favBtn).display === 'none')) {
+                    favBtn.style.display = 'inline-flex';
+                    console.log('检测到收藏按钮被隐藏，已恢复显示');
+                }
+            }, 2000);
+        }, 500);
+        
+        // ========== 11. 暴露全局方法 ==========
+        window.showAddStationDialog = function() {
+            var addBtn = document.getElementById('open-add');
+            if (addBtn) addBtn.click();
+        };
+        
+        window.refreshStations = function() {
+            var refreshBtn = document.getElementById('refresh');
+            if (refreshBtn) refreshBtn.click();
+            setTimeout(function() {
+                rebindFavorite();
+                ensureFavoriteButtonVisible();
+            }, 300);
+        };
+        
+        window.toggleTheme = function() {
+            var themeBtn = document.getElementById('theme-toggle');
+            if (themeBtn) themeBtn.click();
+        };
+        
+        window.showAdminMode = function() {
+            var adminBtn = document.getElementById('toggle-admin');
+            if (adminBtn) adminBtn.click();
+        };
+        
+        console.log('Bridge 注入完成');
+    })();
     """.trimIndent()
 
                 view?.evaluateJavascript(script, null)
@@ -497,18 +768,90 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun showSettingsMenu(view: View) {
-        val popup = PopupMenu(this, view)
-        popup.menu.add("关于")
-        popup.menu.add("检查更新")
-        popup.setOnMenuItemClickListener { item ->
-            when (item.title) {
-                "关于" -> { showAboutDialog(); true }
-                "检查更新" -> { checkUpdate(isManual = true); true }
+    /**
+     * 显示 Fab 菜单，模仿 Speed Dial 样式
+     */
+    // 1. 在类中定义一个变量记录状态
+    private var isAdminMode = false
+
+    // 2. 更新 showFabMenu 方法
+    private fun showFabMenu(anchorView: View) {
+        val popupMenu = PopupMenu(this, anchorView)
+
+        // 使用刚才定义的 XML 菜单
+        popupMenu.menuInflater.inflate(R.menu.fab_menu, popupMenu.menu)
+
+        // --- 动态控制显示逻辑 ---
+        val menu = popupMenu.menu
+
+        // 如果是管理模式：显示“退出编辑”，隐藏“管理模式”
+        menu.findItem(R.id.menu_exit_admin).isVisible = isAdminMode
+        menu.findItem(R.id.menu_admin).isVisible = !isAdminMode
+
+        // 为了美观，管理模式下也可以隐藏设置或添加逻辑，视需求而定
+        // -----------------------
+
+        // 强制显示图标 (保持之前的反射代码)
+        try {
+            val field = PopupMenu::class.java.getDeclaredField("mPopup")
+            field.isAccessible = true
+            val menuPopupHelper = field.get(popupMenu)
+            val setForceShowIcon = menuPopupHelper.javaClass.getDeclaredMethod("setForceShowIcon", Boolean::class.java)
+            setForceShowIcon.invoke(menuPopupHelper, true)
+        } catch (e: Exception) {
+            Log.e("BaiponBridge", "Set Icon Failed", e)
+        }
+
+        popupMenu.setOnMenuItemClickListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.menu_add_station -> {
+                    myWebView.evaluateJavascript("javascript:window.showAddStationDialog()", null)
+                    true
+                }
+                R.id.menu_refresh -> {
+                    myWebView.evaluateJavascript("javascript:window.refreshStations()", null)
+                    true
+                }
+                R.id.menu_theme -> {
+                    myWebView.evaluateJavascript("javascript:window.toggleTheme()", null)
+                    true
+                }
+                R.id.menu_admin -> {
+                    isAdminMode = true // 标记进入
+                    myWebView.evaluateJavascript("javascript:window.showAdminMode()", null)
+                    Toast.makeText(this, "已进入编辑模式，再次点击以退出", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                R.id.menu_exit_admin -> {
+                    isAdminMode = false // 标记退出
+                    // 假设网页端有对应的退出方法，如果没有，可以重新调用 showAdminMode 切换回去
+                    myWebView.evaluateJavascript("javascript:window.showAdminMode()", null)
+                    Toast.makeText(this, "已退出编辑模式", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                R.id.menu_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    true
+                }
                 else -> false
             }
         }
-        popup.show()
+        popupMenu.show()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.getBooleanExtra("check_update", false) == true) {
+            checkUpdate(isManual = true)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (intent?.getBooleanExtra("check_update", false) == true) {
+            intent.removeExtra("check_update")
+            checkUpdate(isManual = true)
+        }
     }
 
     private fun getAppVersionName(): String = try {
