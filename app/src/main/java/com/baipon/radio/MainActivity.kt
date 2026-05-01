@@ -203,6 +203,11 @@ class MainActivity : AppCompatActivity() {
 
         setupWebView()
 
+        // 恢复 WebView 状态
+        if (savedInstanceState != null) {
+            myWebView.restoreState(savedInstanceState)
+        }
+
         // 绑定 FAB 并设置点击事件
         findViewById<FloatingActionButton>(R.id.fab_settings).setOnClickListener { view ->
             showFabMenu(view)
@@ -354,11 +359,7 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            cacheMode = if (isNetworkAvailable()) {
-                WebSettings.LOAD_DEFAULT
-            } else {
-                WebSettings.LOAD_CACHE_ELSE_NETWORK
-            }
+            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
         }
 
         myWebView.addJavascriptInterface(WebAppInterface(), "AndroidBridge")
@@ -706,6 +707,14 @@ class MainActivity : AppCompatActivity() {
         myWebView.loadUrl(webUrl)
     }
 
+    private fun setAppCacheEnabled(bool: Boolean) {}
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 保存 WebView 状态
+        myWebView.saveState(outState)
+    }
+
     private fun isNetworkAvailable(): Boolean {
         return try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -811,10 +820,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 恢复 WebView 的 JavaScript 执行
+        myWebView.onResume()
+        myWebView.resumeTimers()
+
+
         if (intent?.getBooleanExtra("check_update", false) == true) {
             intent.removeExtra("check_update")
             checkUpdate(isManual = true)
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 暂停 WebView，节省资源
+        myWebView.onPause()
+        myWebView.pauseTimers()
     }
 
     private fun getAppVersionName(): String = try {

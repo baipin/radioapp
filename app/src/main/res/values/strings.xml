@@ -1,3 +1,61 @@
 <resources>
+    <!-- 应用名称 -->
     <string name="app_name">百品电台</string>
+
+    <!-- 设置页面 -->
+    <string name="settings">应用设置</string>
+    <string name="general">通用</string>
+    <string name="about">关于</string>
+    <string name="check_update">检查更新</string>
+    <string name="clear_cache">清除缓存</string>
+    <string name="privacy_policy">隐私政策</string>
+    <string name="app_info">应用信息</string>
+    <string name="version">版本</string>
+    <string name="cache_size">缓存大小</string>
+
+    <!-- 通知 -->
+    <string name="playing">正在播放</string>
+    <string name="paused">已暂停</string>
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="radio_channel">百品电台</string>
+
+    <!-- 弹窗 -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">确认</string>
+    <string name="clear_cache_confirm">确定要清除所有缓存吗？</string>
+    <string name="cache_cleared">缓存已清除</string>
+    <string name="clear_failed">清除失败</string>
+
+    <!-- 更新相关 -->
+    <string name="checking_update">正在检查更新...</string>
+    <string name="already_latest">当前已是最新版本</string>
+    <string name="update_failed">检查失败: 网络异常</string>
+    <string name="new_version_found">发现新版本</string>
+    <string name="download_now">立即下载</string>
+    <string name="later">以后再说</string>
+    <string name="cannot_open_link">无法打开链接</string>
+
+    <!-- 关于对话框 -->
+    <string name="about_title">关于百品电台</string>
+    <string name="about_message">版本: %s\n\n致力于提供最纯净的收听体验。\n\n百品电台是一款提供自动全球服务器加速的免费、轻量电台服务软件，覆盖中国大陆、港澳台新等华语地区和部分英语广播，提供随时随地的、稳定性堪比调频广播的收音体验。</string>
+
+    <!-- 权限请求 -->
+    <string name="notification_permission_title">需要通知权限</string>
+    <string name="notification_permission_message">为了在后台播放时显示媒体控制面板（播放/暂停按钮），请允许通知权限。</string>
+    <string name="go_grant">去授权</string>
+
+    <!-- 菜单 -->
+    <string name="add_station">添加电台</string>
+    <string name="refresh_station">刷新电台</string>
+    <string name="dark_mode">深色模式</string>
+    <string name="light_mode">浅色模式</string>
+    <string name="edit_mode">编辑模式</string>
+    <string name="exit_edit">退出编辑</string>
+
+    <!-- 错误页面 -->
+    <string name="signal_lost">信号中断</string>
+    <string name="error_message">百品电台无法连接到服务器\n请检查您的网络设置</string>
+    <string name="retry">尝试重连</string>
 </resources>

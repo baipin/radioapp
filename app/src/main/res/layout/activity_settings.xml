@@ -90,6 +90,37 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content" />
 
+                    <!-- 隐私政策（新增） -->
+                    <LinearLayout
+                        android:id="@+id/btn_privacy_policy"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="16dp">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginEnd="16dp"
+                            app:srcCompat="@android:drawable/ic_menu_edit"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="隐私政策"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
                     <!-- 检查更新 -->
                     <LinearLayout
                         android:id="@+id/btn_check_update"

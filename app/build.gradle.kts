@@ -15,14 +15,18 @@ android {
         applicationId = "com.baipon.radio"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.0.5"
+        versionCode = 6
+        versionName = "0.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            // 将原生调试符号打包到 App Bundle 中
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE" // 或者使用 'FULL' 获取更详细信息
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

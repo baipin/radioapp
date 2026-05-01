@@ -64,6 +64,16 @@ class SettingsActivity : AppCompatActivity() {
             showAboutDialog()
         }
 
+        // 隐私政策按钮（新增）
+        findViewById<LinearLayout>(R.id.btn_privacy_policy)?.setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, "https://radio.baipon.com/privacy_policy".toUri())
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // 检查更新按钮 (独立运作)
         findViewById<LinearLayout>(R.id.btn_check_update)?.setOnClickListener {
             checkUpdateIndependent()
@@ -146,7 +156,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
             .setTitle("关于百品电台")
-            .setMessage("版本: ${getAppVersionName()}\n\n致力于提供最纯净的收听体验。\n\n百品电台提供稳定流畅的在线网络收音机服务。")
+            .setMessage("版本: ${getAppVersionName()}\n\n致力于提供最纯净的收听体验。\n\n百品电台是一款提供自动全球服务器加速的免费、轻量电台服务软件，覆盖中国大陆、港澳台新等华语地区和部分英语广播，提供随时随地的、稳定性堪比调频广播的收音体验。")
             .setPositiveButton("确定", null)
             .show()
     }

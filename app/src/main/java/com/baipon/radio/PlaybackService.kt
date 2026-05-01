@@ -121,6 +121,24 @@ class PlaybackService : MediaSessionService() {
         Log.d("BaiponBridge", "前台服务已启动")
     }
 
+    private fun getAppIcon(): Int {
+        // 返回 App 的 launcher icon
+        return try {
+            val packageManager = packageManager
+            val packageName = packageName
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            applicationInfo.icon
+        } catch (e: Exception) {
+            Log.e("BaiponBridge", "获取 App 图标失败: ${e.message}")
+            R.drawable.ic_launcher_foreground // 备用图标
+        }
+    }
+
+    private fun getDefaultIcon(): Int {
+        // 返回默认的通知图标
+        return R.drawable.ic_launcher_foreground
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
