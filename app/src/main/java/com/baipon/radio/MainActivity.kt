@@ -92,19 +92,8 @@ class MainActivity : AppCompatActivity() {
         fun playStream(streamUrl: String, stationName: String, logoUrl: String = "") {
             Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl - Logo: $logoUrl")
 
-            // 立即显示缓冲状态
-            myWebView.post {
-                myWebView.evaluateJavascript(
-                    "javascript:(function() { " +
-                            "var statusText = document.getElementById('play-status'); " +
-                            "if(statusText) statusText.innerText = '连接中...'; " +
-                            "var masterBtn = document.getElementById('master-play-btn'); " +
-                            "if(masterBtn) masterBtn.icon = 'pause'; " +
-                            "var waveAnim = document.getElementById('playing-anim'); " +
-                            "if(waveAnim) waveAnim.style.display = 'flex'; " +
-                            "})()", null
-                )
-            }
+            // 移除这里的 UI 更新，让 startPlayStateObserver 统一管理 UI
+            // myWebView.post { ... } 删除这段代码
 
             mainScope.launch {
                 ensureMediaControllerConnected {
@@ -112,7 +101,6 @@ class MainActivity : AppCompatActivity() {
                         .setTitle(stationName)
                         .setArtist("百品电台")
 
-                    // 只有当 logoUrl 有效且不是空字符串时才尝试加载
                     if (logoUrl.isNotEmpty() && logoUrl.startsWith("http")) {
                         try {
                             val bitmap = withContext(Dispatchers.IO) {
@@ -125,14 +113,10 @@ class MainActivity : AppCompatActivity() {
                             }
                             if (bitmap != null) {
                                 metadataBuilder.setArtworkData(bitmap.toByteArray(), 1)
-                            } else {
-                                Log.d("BaiponBridge", "图片解码失败，使用默认图标")
                             }
                         } catch (e: Exception) {
-                            Log.d("BaiponBridge", "加载 Logo 失败: ${e.message}，使用默认图标")
+                            Log.d("BaiponBridge", "加载 Logo 失败: ${e.message}")
                         }
-                    } else {
-                        Log.d("BaiponBridge", "无有效 Logo URL，使用默认图标")
                     }
 
                     val metadata = metadataBuilder.build()
@@ -280,54 +264,57 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    // 修改：当Media3播放状态变化时，同步控制网页的audio元素
     private fun startPlayStateObserver() {
         mainScope.launch {
-            var lastState = -1
+            var lastIsPlaying = false
             var lastStation = ""
             while (true) {
-                delay(300)
+                delay(200)
                 mediaController?.let { controller ->
-                    val playbackState = controller.playbackState
                     val isPlaying = controller.isPlaying
+                    val playbackState = controller.playbackState
                     val mediaItem = controller.currentMediaItem
                     val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
 
-                    val currentState = when {
-                        playbackState == Player.STATE_BUFFERING -> 2
-                        isPlaying -> 1
-                        else -> 0
-                    }
-
-                    if (lastState != currentState || lastStation != stationName) {
-                        lastState = currentState
+                    if (lastIsPlaying != isPlaying || lastStation != stationName) {
+                        lastIsPlaying = isPlaying
                         lastStation = stationName
+                        Log.d("BaiponBridge", "UI状态更新: isPlaying=$isPlaying, station=$stationName")
 
+                        // 只更新网页UI，不操作audio元素
                         myWebView.post {
-                            val jsCode = when (currentState) {
-                                1 -> "javascript:(function() { " +
-                                        "var statusText = document.getElementById('play-status'); " +
-                                        "if(statusText) statusText.innerText = '正在直播'; " +
-                                        "var masterBtn = document.getElementById('master-play-btn'); " +
-                                        "if(masterBtn) masterBtn.icon = 'pause'; " +
-                                        "var waveAnim = document.getElementById('playing-anim'); " +
-                                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
-                                        "})()"
-                                2 -> "javascript:(function() { " +
-                                        "var statusText = document.getElementById('play-status'); " +
-                                        "if(statusText) statusText.innerText = '缓冲中...'; " +
-                                        "var masterBtn = document.getElementById('master-play-btn'); " +
-                                        "if(masterBtn) masterBtn.icon = 'pause'; " +
-                                        "var waveAnim = document.getElementById('playing-anim'); " +
-                                        "if(waveAnim) waveAnim.style.display = 'flex'; " +
-                                        "})()"
-                                else -> "javascript:(function() { " +
-                                        "var statusText = document.getElementById('play-status'); " +
-                                        "if(statusText) statusText.innerText = '已暂停'; " +
-                                        "var masterBtn = document.getElementById('master-play-btn'); " +
-                                        "if(masterBtn) masterBtn.icon = 'play_arrow'; " +
-                                        "var waveAnim = document.getElementById('playing-anim'); " +
-                                        "if(waveAnim) waveAnim.style.display = 'none'; " +
-                                        "})()"
+                            val jsCode = when {
+                                playbackState == Player.STATE_BUFFERING -> """
+                                (function() {
+                                    var statusText = document.getElementById('play-status');
+                                    if(statusText) statusText.innerText = '缓冲中...';
+                                    var masterBtn = document.getElementById('master-play-btn');
+                                    if(masterBtn) masterBtn.icon = 'pause';
+                                    var waveAnim = document.getElementById('playing-anim');
+                                    if(waveAnim) waveAnim.style.display = 'flex';
+                                })();
+                            """.trimIndent()
+                                isPlaying -> """
+                                (function() {
+                                    var statusText = document.getElementById('play-status');
+                                    if(statusText) statusText.innerText = '正在直播';
+                                    var masterBtn = document.getElementById('master-play-btn');
+                                    if(masterBtn) masterBtn.icon = 'pause';
+                                    var waveAnim = document.getElementById('playing-anim');
+                                    if(waveAnim) waveAnim.style.display = 'flex';
+                                })();
+                            """.trimIndent()
+                                else -> """
+                                (function() {
+                                    var statusText = document.getElementById('play-status');
+                                    if(statusText) statusText.innerText = '已暂停';
+                                    var masterBtn = document.getElementById('master-play-btn');
+                                    if(masterBtn) masterBtn.icon = 'play_arrow';
+                                    var waveAnim = document.getElementById('playing-anim');
+                                    if(waveAnim) waveAnim.style.display = 'none';
+                                })();
+                            """.trimIndent()
                             }
                             myWebView.evaluateJavascript(jsCode, null)
                         }
@@ -454,286 +441,262 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 val script = """
-    (function() {
-        console.log('Baipon Radio Bridge injecting...');
-        
-        // ========== 1. 只隐藏导航栏右侧的管理按钮，不影响播放器 ==========
-        // 原网页: .nav-content > div:last-child 包含了 settings, add, refresh, theme-toggle 按钮
-        var navRightButtons = document.querySelector('.nav-content > div:last-child');
-        if (navRightButtons) {
-            navRightButtons.style.display = 'none';
-            console.log('已隐藏导航栏右侧按钮组');
-        }
-        
-        // ========== 2. 隐藏音量控件（不影响收藏按钮）==========
-        var volumeBox = document.querySelector('.volume-box');
-        if (volumeBox) {
-            volumeBox.style.display = 'none';
-            console.log('已隐藏音量控件');
-        }
-        
-        // ========== 3. 修复播放器布局（保持收藏按钮可见）==========
-        var playerCard = document.querySelector('.player-card');
-        if (playerCard) {
-            playerCard.style.flexWrap = 'wrap';
-            playerCard.style.gap = '10px';
-            // 确保播放器卡片内所有元素都可见
-            playerCard.style.display = 'flex';
-            playerCard.style.alignItems = 'center';
-        }
-        
-        // 让标题区域可以换行，但不影响收藏按钮
-        var titleContainer = document.querySelector('.player-card > div:first-of-type + div');
-        if (titleContainer) {
-            titleContainer.style.flex = '1';
-            titleContainer.style.minWidth = '100px';
-            // 确保收藏按钮在标题容器内可见
-            var favBtnInTitle = titleContainer.querySelector('#fav-btn-main');
-            if (favBtnInTitle) {
-                favBtnInTitle.style.display = 'inline-flex';
-            }
-        }
-        
-        var currentNameSpan = document.getElementById('current-name');
-        if (currentNameSpan) {
-            currentNameSpan.style.whiteSpace = 'normal';
-            currentNameSpan.style.wordBreak = 'break-word';
-            currentNameSpan.style.fontSize = '1rem';
-        }
-        
-        // ========== 4. 强制确保收藏按钮可见 ==========
-        function ensureFavoriteButtonVisible() {
-            var favBtn = document.getElementById('fav-btn-main');
-            if (favBtn) {
-                favBtn.style.display = 'inline-flex !important';
-                favBtn.style.visibility = 'visible';
-                favBtn.style.opacity = '1';
-                favBtn.style.position = 'relative';
-                favBtn.style.zIndex = '100';
-                console.log('已强制显示收藏按钮');
-                return true;
-            } else {
-                console.log('未找到收藏按钮元素');
-                return false;
-            }
-        }
-        
-        // ========== 5. 添加 CSS 强制规则 ==========
-        var style = document.createElement('style');
-        style.textContent = `
-            #fav-btn-main {
-                display: inline-flex !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                pointer-events: auto !important;
-            }
-            .player-card #fav-btn-main {
-                display: inline-flex !important;
-            }
-        `;
-        document.head.appendChild(style);
-        
-        // ========== 6. 保存当前选中的电台 ==========
-        var currentStation = null;
-        var activeItem = document.querySelector('.radio-item.active');
-        if (activeItem && activeItem.dataset.info) {
-            try {
-                currentStation = JSON.parse(activeItem.dataset.info);
-                console.log('当前选中电台: ' + currentStation.name);
-            } catch(e) {}
-        }
-        
-        // ========== 7. 覆盖 play 函数 ==========
-        window.play = function(s, el) {
-            console.log('play 被调用: ' + s.name);
-            currentStation = s;
-            
-            // 更新 UI
-            document.querySelectorAll('.radio-item').forEach(function(i) {
-                i.classList.remove('active');
-            });
-            if (el) el.classList.add('active');
-            var nameSpan = document.getElementById('current-name');
-            if (nameSpan) nameSpan.innerText = s.name;
-            
-            var logoBox = document.getElementById('player-logo');
-            if (logoBox) {
-                logoBox.innerHTML = '<div class="dynamic-logo">' + (s.logo ? '<img src="' + s.logo + '" class="dynamic-logo">' : s.name.charAt(0)) + '</div>';
-            }
-            
-            var statusText = document.getElementById('play-status');
-            if (statusText) statusText.innerText = "连接中...";
-            
-            // 更新收藏按钮状态
-            setTimeout(function() {
-                var favBtn = document.getElementById('fav-btn-main');
-                if (favBtn && s) {
-                    var favorites = JSON.parse(localStorage.getItem('bp_radios_favs') || '[]');
-                    var isFav = favorites.includes(s.url);
-                    favBtn.icon = isFav ? 'favorite' : 'favorite_border';
-                    ensureFavoriteButtonVisible();
+                                (function() {
+                console.log('Baipon Radio Bridge injecting...');
+                
+                // ========== 1. 隐藏导航栏右侧的管理按钮 ==========
+                var navRightButtons = document.querySelector('.nav-content > div:last-child');
+                if (navRightButtons) {
+                    navRightButtons.style.display = 'none';
+                    console.log('已隐藏导航栏右侧按钮组');
                 }
-            }, 50);
-            
-            // 通知原生播放
-            if (window.AndroidBridge && window.AndroidBridge.playStream) {
-                window.AndroidBridge.playStream(s.url, s.name, s.logo || "");
-            }
-        };
-        
-        // ========== 8. 重新绑定播放按钮 ==========
-        var masterBtn = document.getElementById('master-play-btn');
-        if (masterBtn) {
-            var newBtn = masterBtn.cloneNode(true);
-            masterBtn.parentNode.replaceChild(newBtn, masterBtn);
-            masterBtn = newBtn;
-            
-            masterBtn.onclick = function() {
-                console.log('播放按钮被点击');
-                if (window.AndroidBridge) {
-                    var statusText = document.getElementById('play-status');
-                    var isPlaying = statusText && (statusText.innerText === '正在直播' || statusText.innerText === '缓冲中...');
-                    
-                    if (isPlaying) {
-                        console.log('调用暂停');
-                        window.AndroidBridge.pauseStream();
-                    } else {
-                        console.log('调用播放');
-                        if (currentStation) {
-                            window.play(currentStation, document.querySelector('.radio-item.active'));
-                        } else {
-                            var activeItem = document.querySelector('.radio-item.active');
-                            if (activeItem && activeItem.dataset.info) {
-                                try {
-                                    var station = JSON.parse(activeItem.dataset.info);
-                                    window.play(station, activeItem);
-                                } catch(e) {}
-                            }
-                        }
+                
+                // ========== 2. 隐藏音量控件 ==========
+                var volumeBox = document.querySelector('.volume-box');
+                if (volumeBox) {
+                    volumeBox.style.display = 'none';
+                    console.log('已隐藏音量控件');
+                }
+                
+                // ========== 3. 修复播放器布局 ==========
+                var playerCard = document.querySelector('.player-card');
+                if (playerCard) {
+                    playerCard.style.flexWrap = 'wrap';
+                    playerCard.style.gap = '10px';
+                    playerCard.style.display = 'flex';
+                    playerCard.style.alignItems = 'center';
+                }
+                
+                var titleContainer = document.querySelector('.player-card > div:first-of-type + div');
+                if (titleContainer) {
+                    titleContainer.style.flex = '1';
+                    titleContainer.style.minWidth = '100px';
+                }
+                
+                var currentNameSpan = document.getElementById('current-name');
+                if (currentNameSpan) {
+                    currentNameSpan.style.whiteSpace = 'normal';
+                    currentNameSpan.style.wordBreak = 'break-word';
+                    currentNameSpan.style.fontSize = '1rem';
+                }
+                
+                // ========== 4. 添加 CSS 强制规则 ==========
+                var style = document.createElement('style');
+                style.textContent = `
+                    #fav-btn-main {
+                        display: inline-flex !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        pointer-events: auto !important;
+                    }
+                    .player-card #fav-btn-main {
+                        display: inline-flex !important;
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                // ========== 5. 全局变量 ==========
+                var currentStation = null;
+                
+                // 获取当前选中的电台
+                var activeItem = document.querySelector('.radio-item.active');
+                if (activeItem && activeItem.dataset.info) {
+                    try {
+                        currentStation = JSON.parse(activeItem.dataset.info);
+                        console.log('当前选中电台: ' + currentStation.name);
+                    } catch(e) {
+                        console.error('解析当前电台失败:', e);
                     }
                 }
-            };
-            console.log('播放按钮已重新绑定');
-        }
-        
-        // ========== 9. 重新绑定收藏按钮（添加自动刷新）==========
-        function rebindFavorite() {
-            var favBtn = document.getElementById('fav-btn-main');
-            if (favBtn) {
-                // 移除原有事件，重新绑定
-                var newFavBtn = favBtn.cloneNode(true);
-                favBtn.parentNode.replaceChild(newFavBtn, favBtn);
-                favBtn = newFavBtn;
                 
-                favBtn.onclick = function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('收藏按钮被点击');
+                // ========== 6. 保存原始函数 ==========
+                var originalPlay = window.play;
+                
+                // ========== 7. 覆盖 play 函数 ==========
+                window.play = function(s, el) {
+                    console.log('play 被调用: ' + (s && s.name));
+                    currentStation = s;
                     
-                    if (currentStation) {
-                        var favorites = JSON.parse(localStorage.getItem('bp_radios_favs') || '[]');
-                        var index = favorites.indexOf(currentStation.url);
-                        
-                        if (index > -1) {
-                            favorites.splice(index, 1);
-                            favBtn.icon = 'favorite_border';
-                            console.log('已取消收藏: ' + currentStation.name);
-                            // 显示提示
-                            if (window.AndroidBridge && window.AndroidBridge.showToast) {
-                                window.AndroidBridge.showToast('已取消收藏: ' + currentStation.name);
-                            }
-                        } else {
-                            favorites.push(currentStation.url);
-                            favBtn.icon = 'favorite';
-                            console.log('已添加收藏: ' + currentStation.name);
-                            if (window.AndroidBridge && window.AndroidBridge.showToast) {
-                                window.AndroidBridge.showToast('已添加收藏: ' + currentStation.name);
-                            }
+                    // 调用原始play函数（更新网页UI）
+                    if (originalPlay && typeof originalPlay === 'function') {
+                        try {
+                            originalPlay(s, el);
+                        } catch(e) {
+                            console.error('原始play函数执行失败:', e);
                         }
-                        
-                        localStorage.setItem('bp_radios_favs', JSON.stringify(favorites));
-                        
-                        // ========== 关键修改：收藏后自动刷新列表 ==========
-                        if (typeof refresh === 'function') {
-                            // 保存当前分类
-                            var currentFilterBackup = window.currentFilter;
-                            // 刷新列表
-                            refresh();
-                            // 恢复当前播放的电台高亮
-                            setTimeout(function() {
-                                if (currentStation) {
-                                    var items = document.querySelectorAll('.radio-item');
-                                    for (var i = 0; i < items.length; i++) {
-                                        var item = items[i];
-                                        if (item.dataset.info) {
-                                            try {
-                                                var station = JSON.parse(item.dataset.info);
-                                                if (station.url === currentStation.url) {
-                                                    item.classList.add('active');
-                                                    break;
-                                                }
-                                            } catch(e) {}
-                                        }
-                                    }
-                                }
-                                // 重新绑定按钮
-                                rebindFavorite();
-                            }, 100);
-                        }
-                    } else {
-                        console.log('请先选择一个电台');
-                        if (window.AndroidBridge && window.AndroidBridge.showToast) {
-                            window.AndroidBridge.showToast('请先选择一个电台');
-                        }
+                    }
+                    
+                    // 通知原生播放，让Media3播放同一个流
+                    if (window.AndroidBridge && window.AndroidBridge.playStream) {
+                        window.AndroidBridge.playStream(s.url, s.name, s.logo || "");
                     }
                 };
                 
-                ensureFavoriteButtonVisible();
-                console.log('收藏按钮已重新绑定');
-            }
-        }
-        
-        // ========== 10. 初始化 ==========
-        setTimeout(function() {
-            ensureFavoriteButtonVisible();
-            rebindFavorite();
-            // 每隔2秒检查一次，确保收藏按钮不会被隐藏
-            setInterval(function() {
-                var favBtn = document.getElementById('fav-btn-main');
-                if (favBtn && (favBtn.style.display === 'none' || getComputedStyle(favBtn).display === 'none')) {
-                    favBtn.style.display = 'inline-flex';
-                    console.log('检测到收藏按钮被隐藏，已恢复显示');
+                // ========== 8. 重新绑定播放按钮（只绑定一次）==========
+                var masterBtn = document.getElementById('master-play-btn');
+                if (masterBtn && !masterBtn._hasBridgeListener) {
+                    var newBtn = masterBtn.cloneNode(true);
+                    if (masterBtn.parentNode) {
+                        masterBtn.parentNode.replaceChild(newBtn, masterBtn);
+                        masterBtn = newBtn;
+                    }
+                    
+                    masterBtn.onclick = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('播放按钮被点击');
+                        
+                        if (window.AndroidBridge) {
+                            var statusText = document.getElementById('play-status');
+                            var isPlaying = statusText && (statusText.innerText === '正在直播' || statusText.innerText === '缓冲中...');
+                            
+                            if (isPlaying) {
+                                console.log('调用暂停');
+                                window.AndroidBridge.pauseStream();
+                            } else {
+                                console.log('调用播放');
+                                if (currentStation) {
+                                    if (originalPlay && typeof originalPlay === 'function') {
+                                        var activeItem = document.querySelector('.radio-item.active');
+                                        originalPlay(currentStation, activeItem);
+                                    }
+                                } else {
+                                    var activeItem = document.querySelector('.radio-item.active');
+                                    if (activeItem && activeItem.dataset.info) {
+                                        try {
+                                            var station = JSON.parse(activeItem.dataset.info);
+                                            if (originalPlay && typeof originalPlay === 'function') {
+                                                originalPlay(station, activeItem);
+                                            }
+                                        } catch(e) {
+                                            console.error('解析电台失败:', e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    masterBtn._hasBridgeListener = true;
+                    console.log('播放按钮已重新绑定');
                 }
-            }, 2000);
-        }, 500);
-        
-        // ========== 11. 暴露全局方法 ==========
-        window.showAddStationDialog = function() {
-            var addBtn = document.getElementById('open-add');
-            if (addBtn) addBtn.click();
-        };
-        
-        window.refreshStations = function() {
-            var refreshBtn = document.getElementById('refresh');
-            if (refreshBtn) refreshBtn.click();
-            setTimeout(function() {
-                rebindFavorite();
-                ensureFavoriteButtonVisible();
-            }, 300);
-        };
-        
-        window.toggleTheme = function() {
-            var themeBtn = document.getElementById('theme-toggle');
-            if (themeBtn) themeBtn.click();
-        };
-        
-        window.showAdminMode = function() {
-            var adminBtn = document.getElementById('toggle-admin');
-            if (adminBtn) adminBtn.click();
-        };
-        
-        console.log('Bridge 注入完成');
-    })();
+                
+                // ========== 9. 确保收藏按钮可见 ==========
+                function ensureFavoriteButtonVisible() {
+                    var favBtn = document.getElementById('fav-btn-main');
+                    if (favBtn) {
+                        favBtn.style.display = 'inline-flex';
+                        favBtn.style.visibility = 'visible';
+                        favBtn.style.opacity = '1';
+                        return true;
+                    }
+                    return false;
+                }
+                
+                // ========== 10. 暴露全局方法 ==========
+                window.showAddStationDialog = function() {
+                    var addBtn = document.getElementById('open-add');
+                    if (addBtn) addBtn.click();
+                };
+                
+                window.refreshStations = function() {
+                    var refreshBtn = document.getElementById('refresh');
+                    if (refreshBtn) refreshBtn.click();
+                };
+                
+                // 修改：切换主题而不刷新页面
+                window.toggleTheme = function() {
+                    console.log('切换主题（不刷新页面）');
+                    
+                    var isDark = document.body.classList.contains('mdui-theme-dark');
+                    
+                    if (isDark) {
+                        document.body.classList.remove('mdui-theme-dark');
+                        localStorage.setItem('bp_theme_mode', 'light');
+                        console.log('切换到浅色模式');
+                    } else {
+                        document.body.classList.add('mdui-theme-dark');
+                        localStorage.setItem('bp_theme_mode', 'dark');
+                        console.log('切换到深色模式');
+                    }
+                    
+                    var themeBtn = document.getElementById('theme-toggle');
+                    if (themeBtn) {
+                        themeBtn.icon = document.body.classList.contains('mdui-theme-dark') ? 'light_mode' : 'dark_mode';
+                    }
+                };
+                
+                window.showAdminMode = function() {
+                    var adminBtn = document.getElementById('toggle-admin');
+                    if (adminBtn) adminBtn.click();
+                };
+                
+                // ========== 11. 初始化 ==========
+                setTimeout(function() {
+                    try {
+                        ensureFavoriteButtonVisible();
+                        console.log('Bridge 注入完成');
+                    } catch(e) {
+                        console.error('初始化失败:', e);
+                    }
+                }, 500);
+                
+                // 使用MutationObserver监听DOM变化，确保收藏按钮始终可见
+                var observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                            var favBtn = document.getElementById('fav-btn-main');
+                            if (favBtn && (favBtn.style.display === 'none' || getComputedStyle(favBtn).display === 'none')) {
+                                favBtn.style.display = 'inline-flex';
+                                console.log('检测到收藏按钮被隐藏，已恢复');
+                            }
+                        }
+                    });
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['style', 'class']
+                });
+                
+                // ========== 12. 禁用网页原生音频，所有播放由 Android 处理 ==========
+                // 获取并清空 audio 元素
+                var audioElement = document.getElementById('audio-player');
+                if (audioElement) {
+                    // 移除所有事件监听器
+                    var newAudio = audioElement.cloneNode(true);
+                    audioElement.parentNode.replaceChild(newAudio, audioElement);
+                    audioElement = newAudio;
+                    
+                    // 禁用所有播放方法
+                    audioElement.play = function() {
+                        console.log('网页播放已被禁用，使用 Android 播放器');
+                        return Promise.resolve();
+                    };
+                    audioElement.pause = function() {
+                        console.log('网页暂停已被禁用，使用 Android 播放器');
+                    };
+                    audioElement.load = function() {};
+                    audioElement.src = '';
+                    
+                    console.log('网页 audio 元素已被禁用');
+                }
+
+                // 覆盖网页的 loadSource 函数
+                if (window.loadSource) {
+                    window.loadSource = function(url, isM3U8) {
+                        console.log('loadSource 被拦截，使用 Android 播放器播放: ' + url);
+                        // 不执行任何播放操作，由 Android 处理
+                    };
+                }
+
+                // 覆盖音频错误处理
+                if (window.audio && window.audio.onerror) {
+                    window.audio.onerror = null;
+                }
+                
+            })();
     """.trimIndent()
 
                 view?.evaluateJavascript(script, null)

@@ -31,7 +31,7 @@
         android:id="@+id/menu_admin"
         android:icon="@drawable/ic_outline_edit_note_24"
         app:iconTint="?attr/colorControlNormal"
-        android:title="管理模式"
+        android:title="编辑模式"
         app:showAsAction="never" />
 
     <!-- 退出管理模式 (默认隐藏) -->
