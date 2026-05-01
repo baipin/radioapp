@@ -17,7 +17,7 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationIcon="?attr/homeAsUpIndicator"
-            app:title="应用设置" />
+            app:title="@string/settings" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -47,7 +47,7 @@
                     <com.google.android.material.textview.MaterialTextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="通用"
+                        android:text="@string/general"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
                         android:textColor="?attr/colorPrimary"
                         android:paddingStart="16dp"
@@ -81,7 +81,7 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="关于"
+                            android:text="@string/about"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
@@ -90,7 +90,54 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content" />
 
-                    <!-- 隐私政策（新增） -->
+                    <!-- 语言设置 -->
+                    <LinearLayout
+                        android:id="@+id/btn_language"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="16dp">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginEnd="16dp"
+                            app:srcCompat="@android:drawable/ic_menu_manage"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/language_switch"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:id="@+id/tv_language_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="简体中文"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="8dp"
+                            app:srcCompat="@android:drawable/ic_menu_more"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <com.google.android.material.divider.MaterialDivider
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <!-- 隐私政策 -->
                     <LinearLayout
                         android:id="@+id/btn_privacy_policy"
                         android:layout_width="match_parent"
@@ -112,7 +159,7 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="隐私政策"
+                            android:text="@string/privacy_policy"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
@@ -143,7 +190,7 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="检查更新"
+                            android:text="@string/check_update"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
@@ -174,7 +221,7 @@
                         <com.google.android.material.textview.MaterialTextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="清除缓存"
+                            android:text="@string/clear_cache"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
@@ -196,7 +243,7 @@
                     <com.google.android.material.textview.MaterialTextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="应用信息"
+                        android:text="@string/app_info"
                         android:textAppearance="?attr/textAppearanceTitleSmall"
                         android:textColor="?attr/colorPrimary"
                         android:paddingStart="16dp"
@@ -219,7 +266,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="版本"
+                            android:text="@string/version"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 
@@ -247,7 +294,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="缓存大小"
+                            android:text="@string/cache_size"
                             android:textAppearance="?attr/textAppearanceBodyLarge"
                             android:textColor="?attr/colorOnSurface" />
 

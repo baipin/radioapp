@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">百品電台</string>
+
+    <!-- 設定頁面 -->
     <string name="settings">應用設定</string>
     <string name="general">通用</string>
     <string name="about">關於</string>
@@ -9,17 +11,80 @@
     <string name="app_info">應用資訊</string>
     <string name="version">版本</string>
     <string name="cache_size">快取大小</string>
+    <string name="language_switch">語言/Languages</string>
+    <string name="language_simplified">简体中文</string>
+    <string name="language_traditional">繁體中文</string>
+    <string name="language_english">English</string>
+
+    <!-- 播放器狀態 -->
+    <string name="status_ready">準備就緒</string>
+    <string name="status_playing">正在直播</string>
+    <string name="status_buffering">緩衝中...</string>
+    <string name="status_paused">已暫停</string>
+    <string name="status_please_select">請選擇電台</string>
+    <string name="status_connecting">連線中...</string>
+    <string name="status_proxy_switching">切換代理模式中...</string>
+    <string name="status_unavailable">頻道暫時不可用</string>
+    <string name="status_click_to_activate">點擊圖標以啟動播放</string>
+
+    <!-- 通知 -->
     <string name="playing">正在播放</string>
     <string name="paused">已暫停</string>
     <string name="play">播放</string>
     <string name="pause">暫停</string>
     <string name="radio_channel">百品電台</string>
+
+    <!-- 按鈕 -->
+    <string name="btn_favorite">收藏</string>
+    <string name="btn_add_station">新增電台</string>
+    <string name="btn_batch_import">批量匯入 JSON</string>
+    <string name="btn_save">儲存</string>
+    <string name="btn_delete">刪除此電台</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_start_import">開始匯入</string>
+
+    <!-- 分類標籤 -->
+    <string name="tab_all">全部</string>
+    <string name="tab_favorites">我的收藏</string>
+
+    <!-- 對話框 -->
+    <string name="dialog_title_add">新增電台</string>
+    <string name="dialog_title_edit">編輯電台</string>
+    <string name="dialog_desc">百品電台會先嘗試直連電台，若果失敗百品電台將會使用伺服器進行反代連接，使您在世界各地都可享受電台服務。</string>
+    <string name="field_name">名稱</string>
+    <string name="field_url">連結</string>
+    <string name="field_category">分類</string>
+    <string name="field_logo">Logo 地址</string>
+    <string name="field_paste_json">貼上 JSON 陣列</string>
+
+    <!-- 提示訊息 -->
+    <string name="msg_select_station_first">請先選擇一個電台</string>
+    <string name="msg_fields_required">必填項不能為空</string>
+    <string name="msg_delete_confirm">確定刪除嗎？</string>
+    <string name="msg_json_format_error">JSON 格式錯誤</string>
+    <string name="msg_sync_complete">電台頻道已同步</string>
+
+    <!-- 管理模式 -->
+    <string name="admin_mode_enter">編輯模式</string>
+    <string name="admin_mode_exit">退出編輯</string>
+
+    <!-- 選單 -->
+    <string name="add_station">新增電台</string>
+    <string name="refresh_station">重整電台</string>
+    <string name="dark_mode">深色模式</string>
+    <string name="light_mode">淺色模式</string>
+    <string name="edit_mode">編輯模式</string>
+    <string name="exit_edit">退出編輯</string>
+
+    <!-- 彈窗 -->
     <string name="ok">確定</string>
     <string name="cancel">取消</string>
     <string name="confirm">確認</string>
     <string name="clear_cache_confirm">確定要清除所有快取嗎？</string>
     <string name="cache_cleared">快取已清除</string>
     <string name="clear_failed">清除失敗</string>
+
+    <!-- 更新相關 -->
     <string name="checking_update">正在檢查更新...</string>
     <string name="already_latest">目前已是最新版本</string>
     <string name="update_failed">檢查失敗: 網路異常</string>
@@ -27,17 +92,17 @@
     <string name="download_now">立即下載</string>
     <string name="later">以後再說</string>
     <string name="cannot_open_link">無法開啟連結</string>
+
+    <!-- 關於對話框 -->
     <string name="about_title">關於百品電台</string>
     <string name="about_message">版本: %s\n\n致力於提供最純淨的收聽體驗。\n\n百品電台是一款提供自動全球伺服器加速的免費、輕量電台服務軟體，覆蓋中國大陸、港澳台新等華語地區和部分英語廣播，提供隨時隨地的、穩定性堪比調頻廣播的收音體驗。</string>
+
+    <!-- 權限請求 -->
     <string name="notification_permission_title">需要通知權限</string>
     <string name="notification_permission_message">為了在後台播放時顯示媒體控制面板（播放/暫停按鈕），請允許通知權限。</string>
     <string name="go_grant">去授權</string>
-    <string name="add_station">新增電台</string>
-    <string name="refresh_station">重整電台</string>
-    <string name="dark_mode">深色模式</string>
-    <string name="light_mode">淺色模式</string>
-    <string name="edit_mode">編輯模式</string>
-    <string name="exit_edit">退出編輯</string>
+
+    <!-- 錯誤頁面 -->
     <string name="signal_lost">訊號中斷</string>
     <string name="error_message">百品電台無法連線到伺服器\n請檢查您的網路設定</string>
     <string name="retry">嘗試重連</string>

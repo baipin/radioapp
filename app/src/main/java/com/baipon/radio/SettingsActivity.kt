@@ -21,12 +21,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import androidx.core.view.WindowInsetsControllerCompat
 import android.content.res.Configuration
+import android.content.Context
 
 class SettingsActivity : AppCompatActivity() {
 
     private val mainScope = MainScope()
     // 更新配置地址
     private val updateJsonUrl = "https://radio.baipon.com/android.json"
+
+    override fun attachBaseContext(newBase: Context) {
+        val savedLanguage = LocaleHelper.getSavedLanguage(newBase)
+        val languageCode = savedLanguage ?: LocaleHelper.getCurrentLanguage(newBase)
+        super.attachBaseContext(LocaleHelper.setLocale(newBase, languageCode))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +64,9 @@ class SettingsActivity : AppCompatActivity() {
         // 更新并显示缓存大小
         updateCacheSize()
 
+        // 设置当前语言显示
+        updateLanguageDisplay()
+
         // --- 核心交互部分 ---
 
         // 关于按钮
@@ -64,13 +74,18 @@ class SettingsActivity : AppCompatActivity() {
             showAboutDialog()
         }
 
-        // 隐私政策按钮（新增）
+        // 语言设置按钮
+        findViewById<LinearLayout>(R.id.btn_language)?.setOnClickListener {
+            showLanguageDialog()
+        }
+
+        // 隐私政策按钮
         findViewById<LinearLayout>(R.id.btn_privacy_policy)?.setOnClickListener {
             try {
                 val intent = Intent(Intent.ACTION_VIEW, "https://radio.baipon.com/privacy_policy".toUri())
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.cannot_open_link), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -86,11 +101,80 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
+     * 更新语言显示
+     */
+    private fun updateLanguageDisplay() {
+        val languageText = findViewById<TextView>(R.id.tv_language_value)
+        val currentLang = LocaleHelper.getCurrentLanguage(this)
+        val languageName = when (currentLang) {
+            "zh-CN" -> getString(R.string.language_simplified)
+            "zh-TW" -> getString(R.string.language_traditional)
+            "en" -> getString(R.string.language_english)
+            else -> getString(R.string.language_simplified)
+        }
+        languageText?.text = languageName
+    }
+
+    /**
+     * 显示语言选择对话框
+     */
+    private fun showLanguageDialog() {
+        val languages = arrayOf(
+            getString(R.string.language_simplified),
+            getString(R.string.language_traditional),
+            getString(R.string.language_english)
+        )
+
+        val languageCodes = arrayOf("zh-CN", "zh-TW", "en")
+        val currentLang = LocaleHelper.getCurrentLanguage(this)
+        var checkedIndex = 0
+        for (i in languageCodes.indices) {
+            if (languageCodes[i] == currentLang) {
+                checkedIndex = i
+                break
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.language_switch))
+            .setSingleChoiceItems(languages, checkedIndex) { dialog, which ->
+                val newLanguage = languageCodes[which]
+                if (newLanguage != currentLang) {
+                    // 保存语言设置
+                    LocaleHelper.saveLanguage(this, newLanguage)
+
+                    // 更新配置
+                    val config = resources.configuration
+                    val locale = LocaleHelper.getLocaleFromCode(newLanguage)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        config.setLocale(locale)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        config.locale = locale
+                    }
+                    resources.updateConfiguration(config, resources.displayMetrics)
+
+                    // ========== 简化方案：只重启，不杀进程 ==========
+                    // 清空任务栈，重新启动 MainActivity
+                    val intent = Intent(this, MainActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                    finish()
+                    // 不调用 killProcess，让系统自然回收
+                    // ========== 简化方案结束 ==========
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    /**
      * 独立运作的版本更新逻辑
      * 不再返回 MainActivity，直接在此处完成 联网 -> 解析 -> 弹窗
      */
     private fun checkUpdateIndependent() {
-        Toast.makeText(this, "正在检查更新...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.checking_update), Toast.LENGTH_SHORT).show()
 
         // 获取当前版本号
         val currentCode = try {
@@ -118,27 +202,27 @@ class SettingsActivity : AppCompatActivity() {
                 if (serverCode > currentCode) {
                     showUpdateDialog(serverName, updateLog, downloadUrl)
                 } else {
-                    Toast.makeText(this@SettingsActivity, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SettingsActivity, getString(R.string.already_latest), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@SettingsActivity, "检查失败: 网络异常", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, getString(R.string.update_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     private fun showUpdateDialog(newName: String, log: String, url: String) {
         AlertDialog.Builder(this)
-            .setTitle("发现新版本: $newName")
+            .setTitle(getString(R.string.new_version_found) + ": $newName")
             .setMessage(log)
-            .setPositiveButton("立即下载") { _, _ ->
+            .setPositiveButton(getString(R.string.download_now)) { _, _ ->
                 try {
                     val intent = Intent(Intent.ACTION_VIEW, url.toUri())
                     startActivity(intent)
                 } catch (_: Exception) {
-                    Toast.makeText(this, "无法打开下载链接", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.cannot_open_link), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("以后再说", null)
+            .setNegativeButton(getString(R.string.later), null)
             .show()
     }
 
@@ -155,9 +239,9 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
-            .setTitle("关于百品电台")
-            .setMessage("版本: ${getAppVersionName()}\n\n致力于提供最纯净的收听体验。\n\n百品电台是一款提供自动全球服务器加速的免费、轻量电台服务软件，覆盖中国大陆、港澳台新等华语地区和部分英语广播，提供随时随地的、稳定性堪比调频广播的收音体验。")
-            .setPositiveButton("确定", null)
+            .setTitle(getString(R.string.about_title))
+            .setMessage(getString(R.string.about_message, getAppVersionName()))
+            .setPositiveButton(getString(R.string.ok), null)
             .show()
     }
 
@@ -181,9 +265,9 @@ class SettingsActivity : AppCompatActivity() {
                     }
                 }
                 updateCacheSize()
-                Toast.makeText(this@SettingsActivity, "缓存已清除", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, getString(R.string.cache_cleared), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(this@SettingsActivity, "清除失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, getString(R.string.clear_failed) + ": ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -229,10 +313,10 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showClearCacheDialog() {
         AlertDialog.Builder(this)
-            .setTitle("清除缓存")
-            .setMessage("确定要清除所有缓存吗？")
-            .setPositiveButton("确定") { _, _ -> clearCache() }
-            .setNegativeButton("取消", null)
+            .setTitle(getString(R.string.clear_cache))
+            .setMessage(getString(R.string.clear_cache_confirm))
+            .setPositiveButton(getString(R.string.ok)) { _, _ -> clearCache() }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 

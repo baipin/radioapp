@@ -19,7 +19,6 @@ import android.webkit.*
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -52,8 +51,9 @@ class MainActivity : AppCompatActivity() {
     private var mediaControllerInitialized = false
     private val mainScope = MainScope()
 
-    // MDUI 风格错误页面
-    private val errorHtmlContent = """
+    // MDUI 风格错误页面（使用函数确保 getString 可用）
+    private fun getErrorHtmlContent(): String {
+        return """
         <!DOCTYPE html>
         <html class="mdui-theme-auto">
         <head>
@@ -73,13 +73,14 @@ class MainActivity : AppCompatActivity() {
         <body>
             <div class="mdui-card">
                 <div class="icon">📻</div>
-                <h1>信号中断</h1>
-                <p>百品电台无法连接到服务器<br>请检查您的网络设置</p>
-                <button class="mdui-btn" onclick="Android.retry()">尝试重连</button>
+                <h1>${getString(R.string.signal_lost)}</h1>
+                <p>${getString(R.string.error_message)}</p>
+                <button class="mdui-btn" onclick="Android.retry()">${getString(R.string.retry)}</button>
             </div>
         </body>
         </html>
     """.trimIndent()
+    }
 
     // 网页与原生交互桥接
     inner class WebAppInterface {
@@ -92,14 +93,11 @@ class MainActivity : AppCompatActivity() {
         fun playStream(streamUrl: String, stationName: String, logoUrl: String = "") {
             Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl - Logo: $logoUrl")
 
-            // 移除这里的 UI 更新，让 startPlayStateObserver 统一管理 UI
-            // myWebView.post { ... } 删除这段代码
-
             mainScope.launch {
                 ensureMediaControllerConnected {
                     val metadataBuilder = MediaMetadata.Builder()
                         .setTitle(stationName)
-                        .setArtist("百品电台")
+                        .setArtist(getString(R.string.app_name))
 
                     if (logoUrl.isNotEmpty() && logoUrl.startsWith("http")) {
                         try {
@@ -177,15 +175,21 @@ class MainActivity : AppCompatActivity() {
                 != PackageManager.PERMISSION_GRANTED) {
 
                 AlertDialog.Builder(this)
-                    .setTitle("需要通知权限")
-                    .setMessage("为了在后台播放时显示媒体控制面板（播放/暂停按钮），请允许通知权限。")
-                    .setPositiveButton("去授权") { _, _ ->
+                    .setTitle(getString(R.string.notification_permission_title))
+                    .setMessage(getString(R.string.notification_permission_message))
+                    .setPositiveButton(getString(R.string.go_grant)) { _, _ ->
                         requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
                     }
-                    .setNegativeButton("取消", null)
+                    .setNegativeButton(getString(R.string.cancel), null)
                     .show()
             }
         }
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        val savedLanguage = LocaleHelper.getSavedLanguage(newBase)
+        val languageCode = savedLanguage ?: LocaleHelper.getCurrentLanguage(newBase)
+        super.attachBaseContext(LocaleHelper.setLocale(newBase, languageCode))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -195,9 +199,7 @@ class MainActivity : AppCompatActivity() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val windowController = WindowInsetsControllerCompat(window, window.decorView)
-            // 根据当前是否是深色模式切换图标颜色
             val isNightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            // 如果不是深色模式（即白天模式），则将状态栏文字设为黑色（true）
             windowController.isAppearanceLightStatusBars = !isNightMode
         }
 
@@ -218,6 +220,12 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
 
         startPlaybackService()
+
+        // 检查是否需要重新加载 WebView
+        if (intent?.getBooleanExtra("reload_webview", false) == true) {
+            myWebView.reload()  // 重新加载当前页面
+            intent.removeExtra("reload_webview")
+        }
     }
 
     private fun startPlaybackService() {
@@ -269,61 +277,67 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    // 修改：当Media3播放状态变化时，同步控制网页的audio元素
     private fun startPlayStateObserver() {
         mainScope.launch {
             var lastIsPlaying = false
             var lastStation = ""
             while (true) {
                 delay(200)
-                mediaController?.let { controller ->
-                    val isPlaying = controller.isPlaying
-                    val playbackState = controller.playbackState
-                    val mediaItem = controller.currentMediaItem
-                    val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
+                try {
+                    mediaController?.let { controller ->
+                        val isPlaying = controller.isPlaying
+                        val playbackState = controller.playbackState
+                        val mediaItem = controller.currentMediaItem
+                        val stationName = mediaItem?.mediaMetadata?.title?.toString() ?: ""
 
-                    if (lastIsPlaying != isPlaying || lastStation != stationName) {
-                        lastIsPlaying = isPlaying
-                        lastStation = stationName
-                        Log.d("BaiponBridge", "UI状态更新: isPlaying=$isPlaying, station=$stationName")
+                        if (lastIsPlaying != isPlaying || lastStation != stationName) {
+                            lastIsPlaying = isPlaying
+                            lastStation = stationName
+                            Log.d("BaiponBridge", "UI状态更新: isPlaying=$isPlaying, station=$stationName")
 
-                        // 只更新网页UI，不操作audio元素
-                        myWebView.post {
-                            val jsCode = when {
-                                playbackState == Player.STATE_BUFFERING -> """
-                                (function() {
-                                    var statusText = document.getElementById('play-status');
-                                    if(statusText) statusText.innerText = '缓冲中...';
-                                    var masterBtn = document.getElementById('master-play-btn');
-                                    if(masterBtn) masterBtn.icon = 'pause';
-                                    var waveAnim = document.getElementById('playing-anim');
-                                    if(waveAnim) waveAnim.style.display = 'flex';
-                                })();
-                            """.trimIndent()
-                                isPlaying -> """
-                                (function() {
-                                    var statusText = document.getElementById('play-status');
-                                    if(statusText) statusText.innerText = '正在直播';
-                                    var masterBtn = document.getElementById('master-play-btn');
-                                    if(masterBtn) masterBtn.icon = 'pause';
-                                    var waveAnim = document.getElementById('playing-anim');
-                                    if(waveAnim) waveAnim.style.display = 'flex';
-                                })();
-                            """.trimIndent()
-                                else -> """
-                                (function() {
-                                    var statusText = document.getElementById('play-status');
-                                    if(statusText) statusText.innerText = '已暂停';
-                                    var masterBtn = document.getElementById('master-play-btn');
-                                    if(masterBtn) masterBtn.icon = 'play_arrow';
-                                    var waveAnim = document.getElementById('playing-anim');
-                                    if(waveAnim) waveAnim.style.display = 'none';
-                                })();
-                            """.trimIndent()
+                            myWebView.post {
+                                try {
+                                    val jsCode = when {
+                                        playbackState == Player.STATE_BUFFERING -> """
+                                        (function() {
+                                            var statusText = document.getElementById('play-status');
+                                            if(statusText) statusText.innerText = '${getString(R.string.status_buffering)}';
+                                            var masterBtn = document.getElementById('master-play-btn');
+                                            if(masterBtn) masterBtn.icon = 'pause';
+                                            var waveAnim = document.getElementById('playing-anim');
+                                            if(waveAnim) waveAnim.style.display = 'flex';
+                                        })();
+                                    """.trimIndent()
+                                        isPlaying -> """
+                                        (function() {
+                                            var statusText = document.getElementById('play-status');
+                                            if(statusText) statusText.innerText = '${getString(R.string.status_playing)}';
+                                            var masterBtn = document.getElementById('master-play-btn');
+                                            if(masterBtn) masterBtn.icon = 'pause';
+                                            var waveAnim = document.getElementById('playing-anim');
+                                            if(waveAnim) waveAnim.style.display = 'flex';
+                                        })();
+                                    """.trimIndent()
+                                        else -> """
+                                        (function() {
+                                            var statusText = document.getElementById('play-status');
+                                            if(statusText) statusText.innerText = '${getString(R.string.status_paused)}';
+                                            var masterBtn = document.getElementById('master-play-btn');
+                                            if(masterBtn) masterBtn.icon = 'play_arrow';
+                                            var waveAnim = document.getElementById('playing-anim');
+                                            if(waveAnim) waveAnim.style.display = 'none';
+                                        })();
+                                    """.trimIndent()
+                                    }
+                                    myWebView.evaluateJavascript(jsCode, null)
+                                } catch (e: Exception) {
+                                    Log.e("BaiponBridge", "更新UI失败: ${e.message}")
+                                }
                             }
-                            myWebView.evaluateJavascript(jsCode, null)
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e("BaiponBridge", "状态观察器异常: ${e.message}")
                 }
             }
         }
@@ -371,9 +385,9 @@ class MainActivity : AppCompatActivity() {
                 result: JsResult?
             ): Boolean {
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setTitle(getString(R.string.app_name))
                     .setMessage(message)
-                    .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                    .setPositiveButton(getString(R.string.ok)) { _, _ -> result?.confirm() }
                     .setCancelable(false)
                     .show()
                 return true
@@ -386,10 +400,10 @@ class MainActivity : AppCompatActivity() {
                 result: JsResult?
             ): Boolean {
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setTitle(getString(R.string.app_name))
                     .setMessage(message)
-                    .setPositiveButton("确定") { _, _ -> result?.confirm() }
-                    .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                    .setPositiveButton(getString(R.string.ok)) { _, _ -> result?.confirm() }
+                    .setNegativeButton(getString(R.string.cancel)) { _, _ -> result?.cancel() }
                     .show()
                 return true
             }
@@ -405,13 +419,13 @@ class MainActivity : AppCompatActivity() {
                 input.setText(defaultValue)
 
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("百品电台")  // 修改弹窗标题
+                    .setTitle(getString(R.string.app_name))
                     .setMessage(message)
                     .setView(input)
-                    .setPositiveButton("确定") { _, _ ->
+                    .setPositiveButton(getString(R.string.ok)) { _, _ ->
                         result?.confirm(input.text.toString())
                     }
-                    .setNegativeButton("取消") { _, _ ->
+                    .setNegativeButton(getString(R.string.cancel)) { _, _ ->
                         result?.cancel()
                     }
                     .show()
@@ -428,7 +442,7 @@ class MainActivity : AppCompatActivity() {
                     try {
                         startActivity(Intent(Intent.ACTION_VIEW, request?.url))
                     } catch (_: Exception) {
-                        Toast.makeText(this@MainActivity, "无法处理外部链接", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, getString(R.string.cannot_open_link), Toast.LENGTH_SHORT).show()
                     }
                     true
                 }
@@ -436,14 +450,37 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 if (request?.isForMainFrame == true) {
-                    myWebView.loadDataWithBaseURL(null, errorHtmlContent, "text/html", "UTF-8", null)
+                    myWebView.loadDataWithBaseURL(null, getErrorHtmlContent(), "text/html", "UTF-8", null)
                 }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                val currentLanguage = LocaleHelper.getCurrentLanguage(this@MainActivity)
                 val script = """
                                 (function() {
                 console.log('Baipon Radio Bridge injecting...');
+                
+                // 设置当前语言
+                window.appLanguage = '$currentLanguage';
+                console.log('App 语言: ' + window.appLanguage);
+                
+                // ========== 隐藏网页中的语言切换按钮（因为 App 已有语言设置）==========
+                var langSelector = document.getElementById('language-selector');
+                if (langSelector) {
+                    langSelector.style.display = 'none';
+                    console.log('已隐藏网页中的语言切换按钮');
+                }
+                
+                // 通过 CSS 隐藏语言选择器
+                var style2 = document.createElement('style');
+                style2.textContent = `
+                    #language-selector,
+                    #language-switch-btn,
+                    .language-selector {
+                        display: none !important;
+                    }
+                `;
+                document.head.appendChild(style2);
                 
                 // ========== 1. 隐藏导航栏右侧的管理按钮 ==========
                 var navRightButtons = document.querySelector('.nav-content > div:last-child');
@@ -549,7 +586,7 @@ class MainActivity : AppCompatActivity() {
                         
                         if (window.AndroidBridge) {
                             var statusText = document.getElementById('play-status');
-                            var isPlaying = statusText && (statusText.innerText === '正在直播' || statusText.innerText === '缓冲中...');
+                            var isPlaying = statusText && (statusText.innerText === '${getString(R.string.status_playing)}' || statusText.innerText === '${getString(R.string.status_buffering)}');
                             
                             if (isPlaying) {
                                 console.log('调用暂停');
@@ -704,14 +741,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        myWebView.loadUrl(webUrl)
+        // 添加语言参数到 URL
+        val currentLanguage = LocaleHelper.getCurrentLanguage(this)
+        val urlWithLang = if (webUrl.contains("?")) {
+            "$webUrl&lang=$currentLanguage"
+        } else {
+            "$webUrl?lang=$currentLanguage"
+        }
+        myWebView.loadUrl(urlWithLang)
     }
 
     private fun setAppCacheEnabled(bool: Boolean) {}
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        // 保存 WebView 状态
         myWebView.saveState(outState)
     }
 
@@ -740,30 +783,35 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    /**
-     * 显示 Fab 菜单，模仿 Speed Dial 样式
-     */
-    // 1. 在类中定义一个变量记录状态
     private var isAdminMode = false
 
-    // 2. 更新 showFabMenu 方法
     private fun showFabMenu(anchorView: View) {
         val popupMenu = PopupMenu(this, anchorView)
 
-        // 使用刚才定义的 XML 菜单
         popupMenu.menuInflater.inflate(R.menu.fab_menu, popupMenu.menu)
 
-        // --- 动态控制显示逻辑 ---
         val menu = popupMenu.menu
 
-        // 如果是管理模式：显示“退出编辑”，隐藏“管理模式”
         menu.findItem(R.id.menu_exit_admin).isVisible = isAdminMode
         menu.findItem(R.id.menu_admin).isVisible = !isAdminMode
 
-        // 为了美观，管理模式下也可以隐藏设置或添加逻辑，视需求而定
-        // -----------------------
+        // ========== 关键：强制刷新所有菜单项的标题 ==========
+        menu.findItem(R.id.menu_add_station).title = getString(R.string.add_station)
+        menu.findItem(R.id.menu_refresh).title = getString(R.string.refresh_station)
+        menu.findItem(R.id.menu_admin).title = getString(R.string.edit_mode)
+        menu.findItem(R.id.menu_exit_admin).title = getString(R.string.exit_edit)
+        menu.findItem(R.id.menu_settings).title = getString(R.string.settings)
 
-        // 强制显示图标 (保持之前的反射代码)
+        // 主题切换菜单项需要根据当前模式显示不同文字
+        val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val themeItem = menu.findItem(R.id.menu_theme)
+        if (isDarkTheme) {
+            themeItem.title = getString(R.string.light_mode)
+        } else {
+            themeItem.title = getString(R.string.dark_mode)
+        }
+
+
         try {
             val field = PopupMenu::class.java.getDeclaredField("mPopup")
             field.isAccessible = true
@@ -789,16 +837,15 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 R.id.menu_admin -> {
-                    isAdminMode = true // 标记进入
+                    isAdminMode = true
                     myWebView.evaluateJavascript("javascript:window.showAdminMode()", null)
-                    Toast.makeText(this, "已进入编辑模式，再次点击以退出", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.edit_mode), Toast.LENGTH_SHORT).show()
                     true
                 }
                 R.id.menu_exit_admin -> {
-                    isAdminMode = false // 标记退出
-                    // 假设网页端有对应的退出方法，如果没有，可以重新调用 showAdminMode 切换回去
+                    isAdminMode = false
                     myWebView.evaluateJavascript("javascript:window.showAdminMode()", null)
-                    Toast.makeText(this, "已退出编辑模式", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.exit_edit), Toast.LENGTH_SHORT).show()
                     true
                 }
                 R.id.menu_settings -> {
@@ -820,10 +867,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 恢复 WebView 的 JavaScript 执行
         myWebView.onResume()
         myWebView.resumeTimers()
-
 
         if (intent?.getBooleanExtra("check_update", false) == true) {
             intent.removeExtra("check_update")
@@ -833,7 +878,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // 暂停 WebView，节省资源
         myWebView.onPause()
         myWebView.pauseTimers()
     }
@@ -846,14 +890,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
-            .setTitle("关于百品电台")
-            .setMessage("版本: ${getAppVersionName()}\n致力于提供最纯净的收听体验。")
-            .setPositiveButton("确定", null)
+            .setTitle(getString(R.string.about_title))
+            .setMessage(getString(R.string.about_message, getAppVersionName()))
+            .setPositiveButton(getString(R.string.ok), null)
             .show()
     }
 
     private fun checkUpdate(isManual: Boolean) {
-        if (isManual) Toast.makeText(this, "正在检查更新...", Toast.LENGTH_SHORT).show()
+        if (isManual) Toast.makeText(this, getString(R.string.checking_update), Toast.LENGTH_SHORT).show()
 
         val currentCode = try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
@@ -875,12 +919,12 @@ class MainActivity : AppCompatActivity() {
                     if (serverCode > currentCode) {
                         showUpdateDialog(serverName, updateLog, downloadUrl)
                     } else if (isManual) {
-                        Toast.makeText(this, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.already_latest), Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (_: Exception) {
                 if (isManual) runOnUiThread {
-                    Toast.makeText(this, "检查更新失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.update_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
@@ -888,16 +932,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun showUpdateDialog(newName: String, log: String, url: String) {
         AlertDialog.Builder(this)
-            .setTitle("发现新版本: $newName")
+            .setTitle(getString(R.string.new_version_found) + ": $newName")
             .setMessage(log)
-            .setPositiveButton("立即下载") { _, _ ->
+            .setPositiveButton(getString(R.string.download_now)) { _, _ ->
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
                 } catch (_: Exception) {
-                    Toast.makeText(this, "链接失效", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.cannot_open_link), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("以后再说", null)
+            .setNegativeButton(getString(R.string.later), null)
             .show()
     }
 

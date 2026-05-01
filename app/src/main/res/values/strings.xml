@@ -12,6 +12,21 @@
     <string name="app_info">应用信息</string>
     <string name="version">版本</string>
     <string name="cache_size">缓存大小</string>
+    <string name="language_switch">语言/Languages</string>
+    <string name="language_simplified">简体中文</string>
+    <string name="language_traditional">繁體中文</string>
+    <string name="language_english">English</string>
+
+    <!-- 播放器状态 -->
+    <string name="status_ready">准备就绪</string>
+    <string name="status_playing">正在直播</string>
+    <string name="status_buffering">缓冲中...</string>
+    <string name="status_paused">已暂停</string>
+    <string name="status_please_select">请选择电台</string>
+    <string name="status_connecting">连接中...</string>
+    <string name="status_proxy_switching">切换代理模式中...</string>
+    <string name="status_unavailable">频道暂时不可用</string>
+    <string name="status_click_to_activate">点击图标以激活播放</string>
 
     <!-- 通知 -->
     <string name="playing">正在播放</string>
@@ -19,6 +34,48 @@
     <string name="play">播放</string>
     <string name="pause">暂停</string>
     <string name="radio_channel">百品电台</string>
+
+    <!-- 按钮 -->
+    <string name="btn_favorite">收藏</string>
+    <string name="btn_add_station">添加电台</string>
+    <string name="btn_batch_import">批量导入 JSON</string>
+    <string name="btn_save">保存</string>
+    <string name="btn_delete">删除此电台</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_start_import">开始导入</string>
+
+    <!-- 分类标签 -->
+    <string name="tab_all">全部</string>
+    <string name="tab_favorites">我的收藏</string>
+
+    <!-- 对话框 -->
+    <string name="dialog_title_add">添加电台</string>
+    <string name="dialog_title_edit">编辑电台</string>
+    <string name="dialog_desc">百品电台会先尝试直连电台，若果失败百品电台将会使用服务器进行反代连接，使您在世界各地都可享受电台服务。</string>
+    <string name="field_name">名称</string>
+    <string name="field_url">链接</string>
+    <string name="field_category">分类</string>
+    <string name="field_logo">Logo 地址</string>
+    <string name="field_paste_json">粘贴 JSON 数组</string>
+
+    <!-- 提示消息 -->
+    <string name="msg_select_station_first">请先选择一个电台</string>
+    <string name="msg_fields_required">必填项不能为空</string>
+    <string name="msg_delete_confirm">确定删除吗？</string>
+    <string name="msg_json_format_error">JSON 格式错误</string>
+    <string name="msg_sync_complete">电台频道已同步</string>
+
+    <!-- 管理模式 -->
+    <string name="admin_mode_enter">编辑模式</string>
+    <string name="admin_mode_exit">退出编辑</string>
+
+    <!-- 菜单 -->
+    <string name="add_station">添加电台</string>
+    <string name="refresh_station">刷新电台</string>
+    <string name="dark_mode">深色模式</string>
+    <string name="light_mode">浅色模式</string>
+    <string name="edit_mode">编辑模式</string>
+    <string name="exit_edit">退出编辑</string>
 
     <!-- 弹窗 -->
     <string name="ok">确定</string>
@@ -45,14 +102,6 @@
     <string name="notification_permission_title">需要通知权限</string>
     <string name="notification_permission_message">为了在后台播放时显示媒体控制面板（播放/暂停按钮），请允许通知权限。</string>
     <string name="go_grant">去授权</string>
-
-    <!-- 菜单 -->
-    <string name="add_station">添加电台</string>
-    <string name="refresh_station">刷新电台</string>
-    <string name="dark_mode">深色模式</string>
-    <string name="light_mode">浅色模式</string>
-    <string name="edit_mode">编辑模式</string>
-    <string name="exit_edit">退出编辑</string>
 
     <!-- 错误页面 -->
     <string name="signal_lost">信号中断</string>
