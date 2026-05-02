@@ -15,19 +15,23 @@ android {
         applicationId = "com.baipon.radio"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.0.8"
+        versionCode = 10
+        versionName = "0.0.9.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            // 将原生调试符号打包到 App Bundle 中
+            // 1. 开启混淆和资源压缩（建议）
+            isMinifyEnabled = true
+            isShrinkResources = true // 配合混淆进一步缩减体积
+
+            // 2. 将原生调试符号设为 FULL，能提供更详细的崩溃分析
             ndk {
-                debugSymbolLevel = "SYMBOL_TABLE" // 或者使用 'FULL' 获取更详细信息
+                debugSymbolLevel = "FULL"
             }
-            isMinifyEnabled = false
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

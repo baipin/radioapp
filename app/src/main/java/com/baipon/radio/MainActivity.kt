@@ -912,8 +912,16 @@ class MainActivity : AppCompatActivity() {
                 val json = JSONObject(data)
                 val serverCode = json.getLong("versionCode")
                 val serverName = json.getString("versionName")
-                val downloadUrl = json.getString("downloadUrl")
-                val updateLog = json.getString("updateLog")
+
+                // 支持新属性：优先使用 realdownUrl，如果没有则使用 downloadUrl
+                val downloadUrl = if (json.has("realdownUrl")) {
+                    json.getString("realdownUrl")
+                } else {
+                    json.getString("downloadUrl")
+                }
+
+                // 获取多语言更新日志
+                val updateLog = getUpdateLogByLanguage(json)
 
                 runOnUiThread {
                     if (serverCode > currentCode) {
@@ -922,12 +930,51 @@ class MainActivity : AppCompatActivity() {
                         Toast.makeText(this, getString(R.string.already_latest), Toast.LENGTH_SHORT).show()
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                e.printStackTrace()
                 if (isManual) runOnUiThread {
                     Toast.makeText(this, getString(R.string.update_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
+    }
+
+    /**
+     * 根据当前语言获取对应的更新日志
+     */
+    private fun getUpdateLogByLanguage(jsonObject: JSONObject): String {
+        return try {
+            // 检查 updateLog 是否是 JSONObject
+            if (jsonObject.has("updateLog")) {
+                val updateLogObj = jsonObject.getJSONObject("updateLog")
+
+                // 获取当前语言
+                val currentLang = LocaleHelper.getCurrentLanguage(this)
+
+                // 根据当前语言选择对应的日志
+                val logText = when (currentLang) {
+                    "zh-CN" -> updateLogObj.optString("zh-CN", "")
+                    "zh-TW" -> updateLogObj.optString("zh-TW", "")
+                    "zh-HK" -> updateLogObj.optString("zh-HK", "")
+                    "en" -> updateLogObj.optString("en", "")
+                    else -> updateLogObj.optString("en", "")
+                }
+
+                // 如果对应语言的日志为空，尝试使用英文或简体中文
+                if (logText.isEmpty()) {
+                    val fallback = updateLogObj.optString("en", "")
+                    if (fallback.isNotEmpty()) fallback else updateLogObj.optString("zh-CN", getString(R.string.new_version_found))
+                } else {
+                    logText
+                }
+            } else {
+                // 兼容旧版本 JSON（纯文本格式）
+                jsonObject.getString("updateLog")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            jsonObject.optString("updateLog", getString(R.string.new_version_found))
+        }
     }
 
     private fun showUpdateDialog(newName: String, log: String, url: String) {
