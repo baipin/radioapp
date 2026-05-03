@@ -482,11 +482,29 @@ class MainActivity : AppCompatActivity() {
                 `;
                 document.head.appendChild(style2);
                 
-                // ========== 1. 隐藏导航栏右侧的管理按钮 ==========
+                // ========== 1. 隐藏导航栏右侧的管理按钮（但保留搜索按钮）==========
                 var navRightButtons = document.querySelector('.nav-content > div:last-child');
                 if (navRightButtons) {
-                    navRightButtons.style.display = 'none';
-                    console.log('已隐藏导航栏右侧按钮组');
+                    // 获取所有按钮
+                    var buttons = navRightButtons.querySelectorAll('mdui-button-icon');
+                    buttons.forEach(function(btn) {
+                        var iconName = btn.getAttribute('icon');
+                        // 保留搜索按钮，隐藏其他按钮
+                        if (iconName !== 'search') {
+                            btn.style.display = 'none';
+                            console.log('已隐藏按钮: ' + iconName);
+                        } else {
+                            console.log('保留搜索按钮');
+                        }
+                    });
+                    
+                    // 额外处理：如果还有其他非 mdui-button-icon 的元素（比如原生按钮），也处理
+                    var otherBtns = navRightButtons.querySelectorAll('button:not(mdui-button-icon)');
+                    otherBtns.forEach(function(btn) {
+                        btn.style.display = 'none';
+                    });
+                    
+                    console.log('导航栏右侧按钮处理完成（保留搜索按钮）');
                 }
                 
                 // ========== 2. 隐藏音量控件 ==========
@@ -913,12 +931,7 @@ class MainActivity : AppCompatActivity() {
                 val serverCode = json.getLong("versionCode")
                 val serverName = json.getString("versionName")
 
-                // 支持新属性：优先使用 realdownUrl，如果没有则使用 downloadUrl
-                val downloadUrl = if (json.has("realdownUrl")) {
-                    json.getString("realdownUrl")
-                } else {
-                    json.getString("downloadUrl")
-                }
+                val downloadUrl = json.getString("downloadUrl")
 
                 // 获取多语言更新日志
                 val updateLog = getUpdateLogByLanguage(json)

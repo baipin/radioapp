@@ -195,12 +195,7 @@ class SettingsActivity : AppCompatActivity() {
                 val serverCode = result.getLong("versionCode")
                 val serverName = result.getString("versionName")
 
-                // 支持新属性：优先使用 realdownUrl，如果没有则使用 downloadUrl
-                val downloadUrl = if (result.has("realdownUrl")) {
-                    result.getString("realdownUrl")
-                } else {
-                    result.getString("downloadUrl")
-                }
+                val downloadUrl = result.getString("downloadUrl")
 
                 // 获取多语言更新日志
                 val updateLog = getUpdateLogByLanguage(result)
