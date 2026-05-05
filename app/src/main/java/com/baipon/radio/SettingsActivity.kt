@@ -142,7 +142,10 @@ class SettingsActivity : AppCompatActivity() {
                     // 保存语言设置
                     LocaleHelper.saveLanguage(this, newLanguage)
 
-                    // 更新配置
+                    // 显示提示信息
+                    Toast.makeText(this, getString(R.string.language_changed_restart), Toast.LENGTH_SHORT).show()
+
+                    // 更新配置（立即生效）
                     val config = resources.configuration
                     val locale = LocaleHelper.getLocaleFromCode(newLanguage)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -153,14 +156,13 @@ class SettingsActivity : AppCompatActivity() {
                     }
                     resources.updateConfiguration(config, resources.displayMetrics)
 
-                    // ========== 简化方案：只重启，不杀进程 ==========
-                    // 清空任务栈，重新启动 MainActivity
-                    val intent = Intent(this, MainActivity::class.java)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    // 【修复】清空任务栈，重新启动 MainActivity，并传递重新加载标志
+                    val intent = Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        putExtra("reload_webview", true)
+                    }
                     startActivity(intent)
                     finish()
-                    // 不调用 killProcess，让系统自然回收
-                    // ========== 简化方案结束 ==========
                 }
                 dialog.dismiss()
             }

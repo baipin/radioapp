@@ -16,6 +16,7 @@
     <string name="language_simplified">简体中文</string>
     <string name="language_traditional">繁體中文</string>
     <string name="language_english">English</string>
+    <string name="language_changed_restart">语言已更改，应用将重启</string>
 
     <!-- 播放器状态 -->
     <string name="status_ready">准备就绪</string>

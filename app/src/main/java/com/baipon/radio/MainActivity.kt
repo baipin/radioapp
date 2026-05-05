@@ -23,6 +23,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -51,7 +54,7 @@ class MainActivity : AppCompatActivity() {
     private var mediaControllerInitialized = false
     private val mainScope = MainScope()
 
-    // MDUI 风格错误页面（使用函数确保 getString 可用）
+    // MDUI 风格错误页面
     private fun getErrorHtmlContent(): String {
         return """
         <!DOCTYPE html>
@@ -148,7 +151,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 将 Bitmap 转换为 ByteArray
     private fun Bitmap.toByteArray(): ByteArray {
         val stream = java.io.ByteArrayOutputStream()
         this.compress(Bitmap.CompressFormat.PNG, 100, stream)
@@ -187,30 +189,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-        val savedLanguage = LocaleHelper.getSavedLanguage(newBase)
-        val languageCode = savedLanguage ?: LocaleHelper.getCurrentLanguage(newBase)
-        super.attachBaseContext(LocaleHelper.setLocale(newBase, languageCode))
+        // 获取保存的语言，如果没有则使用系统语言
+        var savedLanguage = LocaleHelper.getSavedLanguage(newBase)
+        if (savedLanguage == null || savedLanguage.isEmpty()) {
+            // 首次启动，获取系统语言并保存
+            savedLanguage = LocaleHelper.getCurrentLanguage(newBase)
+            LocaleHelper.saveLanguage(newBase, savedLanguage)
+        }
+        super.attachBaseContext(LocaleHelper.setLocale(newBase, savedLanguage))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setupWindowDisplay()
+
+        // 【修复1】使用新的 Edge-to-Edge API 替代弃用的 setStatusBarColor
+        setupEdgeToEdge()
+
         setContentView(R.layout.activity_main)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val windowController = WindowInsetsControllerCompat(window, window.decorView)
-            val isNightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            windowController.isAppearanceLightStatusBars = !isNightMode
-        }
+        // 【修复2】正确处理窗口边衬区，避免 Android 15 闪退
+        setupWindowInsets()
 
         setupWebView()
 
-        // 恢复 WebView 状态
         if (savedInstanceState != null) {
             myWebView.restoreState(savedInstanceState)
         }
 
-        // 绑定 FAB 并设置点击事件
         findViewById<FloatingActionButton>(R.id.fab_settings).setOnClickListener { view ->
             showFabMenu(view)
         }
@@ -221,10 +226,45 @@ class MainActivity : AppCompatActivity() {
 
         startPlaybackService()
 
-        // 检查是否需要重新加载 WebView
         if (intent?.getBooleanExtra("reload_webview", false) == true) {
-            myWebView.reload()  // 重新加载当前页面
+            myWebView.reload()
             intent.removeExtra("reload_webview")
+        }
+    }
+
+    /**
+     * 【修复1】使用新的 Edge-to-Edge API 替代弃用的 setStatusBarColor
+     */
+    private fun setupEdgeToEdge() {
+        // 启用 Edge-to-Edge 显示
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // 设置状态栏和导航栏为半透明（而不是完全透明）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.navigationBarColor = Color.parseColor("#806750A4")
+            window.statusBarColor = Color.parseColor("#806750A4")
+        }
+
+        // 适配图标颜色
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        val isNightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        insetsController.isAppearanceLightStatusBars = !isNightMode
+        insetsController.isAppearanceLightNavigationBars = !isNightMode
+    }
+
+    /**
+     * 【修复2】正确处理窗口边衬区，避免 Android 15 闪退
+     */
+    private fun setupWindowInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.webview)) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                systemBars.left,
+                systemBars.top,
+                systemBars.right,
+                systemBars.bottom
+            )
+            insets
         }
     }
 
@@ -354,15 +394,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupWindowDisplay() {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-        window.statusBarColor = Color.parseColor("#6750A4")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-        }
-    }
-
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private fun setupWebView() {
         myWebView = findViewById(R.id.webview)
@@ -485,11 +516,9 @@ class MainActivity : AppCompatActivity() {
                 // ========== 1. 隐藏导航栏右侧的管理按钮（但保留搜索按钮）==========
                 var navRightButtons = document.querySelector('.nav-content > div:last-child');
                 if (navRightButtons) {
-                    // 获取所有按钮
                     var buttons = navRightButtons.querySelectorAll('mdui-button-icon');
                     buttons.forEach(function(btn) {
                         var iconName = btn.getAttribute('icon');
-                        // 保留搜索按钮，隐藏其他按钮
                         if (iconName !== 'search') {
                             btn.style.display = 'none';
                             console.log('已隐藏按钮: ' + iconName);
@@ -498,7 +527,6 @@ class MainActivity : AppCompatActivity() {
                         }
                     });
                     
-                    // 额外处理：如果还有其他非 mdui-button-icon 的元素（比如原生按钮），也处理
                     var otherBtns = navRightButtons.querySelectorAll('button:not(mdui-button-icon)');
                     otherBtns.forEach(function(btn) {
                         btn.style.display = 'none';
@@ -554,7 +582,6 @@ class MainActivity : AppCompatActivity() {
                 // ========== 5. 全局变量 ==========
                 var currentStation = null;
                 
-                // 获取当前选中的电台
                 var activeItem = document.querySelector('.radio-item.active');
                 if (activeItem && activeItem.dataset.info) {
                     try {
@@ -573,7 +600,6 @@ class MainActivity : AppCompatActivity() {
                     console.log('play 被调用: ' + (s && s.name));
                     currentStation = s;
                     
-                    // 调用原始play函数（更新网页UI）
                     if (originalPlay && typeof originalPlay === 'function') {
                         try {
                             originalPlay(s, el);
@@ -582,13 +608,12 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     
-                    // 通知原生播放，让Media3播放同一个流
                     if (window.AndroidBridge && window.AndroidBridge.playStream) {
                         window.AndroidBridge.playStream(s.url, s.name, s.logo || "");
                     }
                 };
                 
-                // ========== 8. 重新绑定播放按钮（只绑定一次）==========
+                // ========== 8. 重新绑定播放按钮 ==========
                 var masterBtn = document.getElementById('master-play-btn');
                 if (masterBtn && !masterBtn._hasBridgeListener) {
                     var newBtn = masterBtn.cloneNode(true);
@@ -659,7 +684,6 @@ class MainActivity : AppCompatActivity() {
                     if (refreshBtn) refreshBtn.click();
                 };
                 
-                // 修改：切换主题而不刷新页面
                 window.toggleTheme = function() {
                     console.log('切换主题（不刷新页面）');
                     
@@ -696,7 +720,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }, 500);
                 
-                // 使用MutationObserver监听DOM变化，确保收藏按钮始终可见
                 var observer = new MutationObserver(function(mutations) {
                     mutations.forEach(function(mutation) {
                         if (mutation.type === 'childList' || mutation.type === 'attributes') {
@@ -716,16 +739,13 @@ class MainActivity : AppCompatActivity() {
                     attributeFilter: ['style', 'class']
                 });
                 
-                // ========== 12. 禁用网页原生音频，所有播放由 Android 处理 ==========
-                // 获取并清空 audio 元素
+                // ========== 12. 禁用网页原生音频 ==========
                 var audioElement = document.getElementById('audio-player');
                 if (audioElement) {
-                    // 移除所有事件监听器
                     var newAudio = audioElement.cloneNode(true);
                     audioElement.parentNode.replaceChild(newAudio, audioElement);
                     audioElement = newAudio;
                     
-                    // 禁用所有播放方法
                     audioElement.play = function() {
                         console.log('网页播放已被禁用，使用 Android 播放器');
                         return Promise.resolve();
@@ -739,15 +759,12 @@ class MainActivity : AppCompatActivity() {
                     console.log('网页 audio 元素已被禁用');
                 }
 
-                // 覆盖网页的 loadSource 函数
                 if (window.loadSource) {
                     window.loadSource = function(url, isM3U8) {
                         console.log('loadSource 被拦截，使用 Android 播放器播放: ' + url);
-                        // 不执行任何播放操作，由 Android 处理
                     };
                 }
 
-                // 覆盖音频错误处理
                 if (window.audio && window.audio.onerror) {
                     window.audio.onerror = null;
                 }
@@ -759,7 +776,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 添加语言参数到 URL
+        // 【修复3】加载 WebView 时传递当前语言
+        loadWebViewWithLanguage()
+    }
+
+    /**
+     * 【修复3】根据当前语言加载 WebView
+     */
+    private fun loadWebViewWithLanguage() {
         val currentLanguage = LocaleHelper.getCurrentLanguage(this)
         val urlWithLang = if (webUrl.contains("?")) {
             "$webUrl&lang=$currentLanguage"
@@ -767,6 +791,21 @@ class MainActivity : AppCompatActivity() {
             "$webUrl?lang=$currentLanguage"
         }
         myWebView.loadUrl(urlWithLang)
+    }
+
+    /**
+     * 【修复3】配置变化时（如语言改变）重新加载
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+
+        // 语言可能已改变，重新加载 WebView
+        loadWebViewWithLanguage()
+
+        // 更新状态栏图标颜色（日夜模式切换时）
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        val isNightMode = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        insetsController.isAppearanceLightStatusBars = !isNightMode
     }
 
     private fun setAppCacheEnabled(bool: Boolean) {}
@@ -813,14 +852,12 @@ class MainActivity : AppCompatActivity() {
         menu.findItem(R.id.menu_exit_admin).isVisible = isAdminMode
         menu.findItem(R.id.menu_admin).isVisible = !isAdminMode
 
-        // ========== 关键：强制刷新所有菜单项的标题 ==========
         menu.findItem(R.id.menu_add_station).title = getString(R.string.add_station)
         menu.findItem(R.id.menu_refresh).title = getString(R.string.refresh_station)
         menu.findItem(R.id.menu_admin).title = getString(R.string.edit_mode)
         menu.findItem(R.id.menu_exit_admin).title = getString(R.string.exit_edit)
         menu.findItem(R.id.menu_settings).title = getString(R.string.settings)
 
-        // 主题切换菜单项需要根据当前模式显示不同文字
         val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val themeItem = menu.findItem(R.id.menu_theme)
         if (isDarkTheme) {
@@ -828,7 +865,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             themeItem.title = getString(R.string.dark_mode)
         }
-
 
         try {
             val field = PopupMenu::class.java.getDeclaredField("mPopup")
@@ -933,7 +969,6 @@ class MainActivity : AppCompatActivity() {
 
                 val downloadUrl = json.getString("downloadUrl")
 
-                // 获取多语言更新日志
                 val updateLog = getUpdateLogByLanguage(json)
 
                 runOnUiThread {
@@ -952,19 +987,13 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    /**
-     * 根据当前语言获取对应的更新日志
-     */
     private fun getUpdateLogByLanguage(jsonObject: JSONObject): String {
         return try {
-            // 检查 updateLog 是否是 JSONObject
             if (jsonObject.has("updateLog")) {
                 val updateLogObj = jsonObject.getJSONObject("updateLog")
 
-                // 获取当前语言
                 val currentLang = LocaleHelper.getCurrentLanguage(this)
 
-                // 根据当前语言选择对应的日志
                 val logText = when (currentLang) {
                     "zh-CN" -> updateLogObj.optString("zh-CN", "")
                     "zh-TW" -> updateLogObj.optString("zh-TW", "")
@@ -973,7 +1002,6 @@ class MainActivity : AppCompatActivity() {
                     else -> updateLogObj.optString("en", "")
                 }
 
-                // 如果对应语言的日志为空，尝试使用英文或简体中文
                 if (logText.isEmpty()) {
                     val fallback = updateLogObj.optString("en", "")
                     if (fallback.isNotEmpty()) fallback else updateLogObj.optString("zh-CN", getString(R.string.new_version_found))
@@ -981,7 +1009,6 @@ class MainActivity : AppCompatActivity() {
                     logText
                 }
             } else {
-                // 兼容旧版本 JSON（纯文本格式）
                 jsonObject.getString("updateLog")
             }
         } catch (e: Exception) {

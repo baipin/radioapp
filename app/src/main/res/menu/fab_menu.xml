@@ -6,7 +6,7 @@
     <item
         android:id="@+id/menu_add_station"
         android:icon="@drawable/ic_outline_add_circle_outline_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/add_station"
         app:showAsAction="ifRoom" />
 
@@ -14,7 +14,7 @@
     <item
         android:id="@+id/menu_refresh"
         android:icon="@drawable/ic_outline_refresh_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/refresh_station"
         app:showAsAction="never" />
 
@@ -22,7 +22,7 @@
     <item
         android:id="@+id/menu_theme"
         android:icon="@drawable/ic_outline_dark_mode_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/dark_mode"
         app:showAsAction="never" />
 
@@ -30,7 +30,7 @@
     <item
         android:id="@+id/menu_admin"
         android:icon="@drawable/ic_outline_edit_note_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/edit_mode"
         app:showAsAction="never" />
 
@@ -38,7 +38,7 @@
     <item
         android:id="@+id/menu_exit_admin"
         android:icon="@drawable/ic_outline_close_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/exit_edit"
         android:visible="false"
         app:showAsAction="always|withText" />
@@ -47,7 +47,7 @@
     <item
         android:id="@+id/menu_settings"
         android:icon="@drawable/ic_outline_settings_24"
-        app:iconTint="?attr/colorControlNormal"
+        app:iconTint="?attr/colorOnSurfaceVariant"
         android:title="@string/settings"
         app:showAsAction="never" />
 </menu>

@@ -77,4 +77,10 @@ object LocaleHelper {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         return prefs.getString("language", null)
     }
+
+    // 【可选】检查是否首次启动（没有任何保存的语言）
+    fun isFirstLaunch(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        return !prefs.contains("language")
+    }
 }
