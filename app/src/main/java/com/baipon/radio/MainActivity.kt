@@ -40,11 +40,14 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ExecutionException
+import android.widget.ProgressBar
 
 @OptIn(UnstableApi::class)
 class MainActivity : AppCompatActivity() {
 
     private lateinit var myWebView: WebView
+    // 声明进度条
+    private lateinit var loadingSpinner: ProgressBar
     private val webUrl = "https://radio.baipon.com/"
     private val updateJsonUrl = "https://radio.baipon.com/android.json"
 
@@ -239,12 +242,6 @@ class MainActivity : AppCompatActivity() {
         // 启用 Edge-to-Edge 显示
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // 设置状态栏和导航栏为半透明（而不是完全透明）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            window.navigationBarColor = Color.parseColor("#806750A4")
-            window.statusBarColor = Color.parseColor("#806750A4")
-        }
-
         // 适配图标颜色
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
         val isNightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -397,6 +394,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private fun setupWebView() {
         myWebView = findViewById(R.id.webview)
+        // 绑定进度条组件
+        loadingSpinner = findViewById(R.id.loading_spinner)
         myWebView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -481,11 +480,22 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 if (request?.isForMainFrame == true) {
+                    // 【新增】发生错误时，隐藏加载圈
+                    loadingSpinner.visibility = View.GONE
                     myWebView.loadDataWithBaseURL(null, getErrorHtmlContent(), "text/html", "UTF-8", null)
                 }
             }
 
+            // 【新增】网页开始加载时，显示加载圈
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                loadingSpinner.visibility = View.VISIBLE
+            }
+
+
             override fun onPageFinished(view: WebView?, url: String?) {
+                // 【新增】网页加载完成时，隐藏加载圈
+                loadingSpinner.visibility = View.GONE
                 val currentLanguage = LocaleHelper.getCurrentLanguage(this@MainActivity)
                 val script = """
                                 (function() {
@@ -922,7 +932,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         myWebView.onResume()
-        myWebView.resumeTimers()
+        // myWebView.resumeTimers()
 
         if (intent?.getBooleanExtra("check_update", false) == true) {
             intent.removeExtra("check_update")
@@ -933,7 +943,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         myWebView.onPause()
-        myWebView.pauseTimers()
+        // myWebView.pauseTimers()
     }
 
     private fun getAppVersionName(): String = try {
