@@ -128,22 +128,49 @@ class MainActivity : AppCompatActivity() {
 
                     // --- 2. 核心修改：动态判定 MediaItem 类型 ---
                     val mediaItemBuilder = MediaItem.Builder()
-                        .setUri(streamUrl)
-                        .setMediaMetadata(metadata)
+                   .setUri(streamUrl)
+                   .setMediaMetadata(metadata)
 
-                    // 判定逻辑：如果是 m3u8 或是你特定的 API 地址（可能隐藏了后缀），强制指定 HLS
-                    if (streamUrl.contains(".m3u8", ignoreCase = true) ||
-                        streamUrl.contains("radioback.baipon.com", ignoreCase = true)) {
+// 将 URL 转为小写进行统一判定，防止大小写导致匹配失败
+val urlLowerCase = streamUrl.lowercase()
 
-                        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
-                        Log.d("BaiponBridge", "检测为 HLS 协议，已设置 MimeType")
-                    } else {
-                        // 对于普通的 .mp3, .aac 或其他直链，不设置 MimeType
-                        // ExoPlayer 会自动通过 ProgressiveMediaSource 进行嗅探解析
-                        Log.d("BaiponBridge", "检测为普通音频流，由系统自动识别")
-                    }
+when {
+    // HLS 协议 (直播流最常用)
+    urlLowerCase.contains("type=hls") || 
+    urlLowerCase.contains("type=m3u8") || 
+    urlLowerCase.contains(".m3u8") -> {
+        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+        Log.d("Player", "检测为 HLS 流")
+    }
 
-                    val mediaItem = mediaItemBuilder.build()
+    // MP3 音频
+    urlLowerCase.contains("type=mp3") || 
+    urlLowerCase.contains(".mp3") -> {
+        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
+        Log.d("Player", "检测为 MP3 音频")
+    }
+
+    // AAC 音频
+    urlLowerCase.contains("type=aac") || 
+    urlLowerCase.contains(".aac") -> {
+        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+        Log.d("Player", "检测为 AAC 音频")
+    }
+
+    // DASH 协议
+    urlLowerCase.contains("type=dash") || 
+    urlLowerCase.contains(".mpd") -> {
+        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MPD)
+        Log.d("Player", "检测为 DASH 流")
+    }
+
+    else -> {
+        // 兜底逻辑：不设置 MimeType，让 ExoPlayer 自动嗅探重定向后的内容
+        Log.d("Player", "未知类型，启用自动识别模式")
+    }
+}
+
+val mediaItem = mediaItemBuilder.build()
 
                     // --- 3. 执行播放 (建议先 stop 确保状态干净) ---
                     mediaController?.let { controller ->
