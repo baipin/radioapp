@@ -39,7 +39,17 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         Log.d("BaiponBridge", "PlaybackService onCreate 开始")
 
+        // 1. 关键：配置一个支持重定向和 UA 伪装的数据源工厂
+        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .setAllowCrossProtocolRedirects(true) // 必须：允许 https -> http 的跳转
+
+        // 2. 将数据源工厂注入到 Player 中
         player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this)
+                    .setDataSourceFactory(httpDataSourceFactory)
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -48,6 +58,9 @@ class PlaybackService : MediaSessionService() {
                 true
             )
             .build()
+
+        // 3. (可选) 添加详细日志监听器，帮你定位到底是哪一步断了
+        player.addAnalyticsListener(androidx.media3.exoplayer.util.EventLogger())
 
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -215,9 +228,22 @@ class PlaybackService : MediaSessionService() {
 
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
-                .setMediaMetadata(metadata)
+                // 关键：这行代码告诉 ExoPlayer：无论这个 URL 长什么样，
+                // 最终它一定是一个 M3U8，请按 HLS 逻辑处理后续所有跳转。
+                .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(name).build())
                 .build()
 
+            // 2. 关键：手动创建 HlsMediaSource，强制跳过嗅探环节
+            // 注意：如果你在 onCreate 里已经配置了 httpDataSourceFactory，这里直接用
+            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setAllowCrossProtocolRedirects(true)
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+            val hlsMediaSource = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(httpDataSourceFactory)
+                .createMediaSource(mediaItem)
+
+            player.setMediaSource(hlsMediaSource)
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
