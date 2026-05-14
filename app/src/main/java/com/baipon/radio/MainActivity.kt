@@ -131,46 +131,46 @@ class MainActivity : AppCompatActivity() {
                    .setUri(streamUrl)
                    .setMediaMetadata(metadata)
 
-// 将 URL 转为小写进行统一判定，防止大小写导致匹配失败
-val urlLowerCase = streamUrl.lowercase()
+                    // 将 URL 转为小写进行统一判定，防止大小写导致匹配失败
+                    val urlLowerCase = streamUrl.lowercase()
 
-when {
-    // HLS 协议 (直播流最常用)
-    urlLowerCase.contains("type=hls") || 
-    urlLowerCase.contains("type=m3u8") || 
-    urlLowerCase.contains(".m3u8") -> {
-        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
-        Log.d("Player", "检测为 HLS 流")
-    }
+                    when {
+                        // HLS 协议 (直播流最常用)
+                        urlLowerCase.contains("type=hls") ||
+                        urlLowerCase.contains("type=m3u8") ||
+                        urlLowerCase.contains(".m3u8") -> {
+                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                            Log.d("Player", "检测为 HLS 流")
+                        }
 
-    // MP3 音频
-    urlLowerCase.contains("type=mp3") || 
-    urlLowerCase.contains(".mp3") -> {
-        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
-        Log.d("Player", "检测为 MP3 音频")
-    }
+                        // MP3 音频
+                        urlLowerCase.contains("type=mp3") ||
+                        urlLowerCase.contains(".mp3") -> {
+                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
+                            Log.d("Player", "检测为 MP3 音频")
+                        }
 
-    // AAC 音频
-    urlLowerCase.contains("type=aac") || 
-    urlLowerCase.contains(".aac") -> {
-        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
-        Log.d("Player", "检测为 AAC 音频")
-    }
+                        // AAC 音频
+                        urlLowerCase.contains("type=aac") ||
+                        urlLowerCase.contains(".aac") -> {
+                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
+                            Log.d("Player", "检测为 AAC 音频")
+                        }
 
-    // DASH 协议
-    urlLowerCase.contains("type=dash") || 
-    urlLowerCase.contains(".mpd") -> {
-        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MPD)
-        Log.d("Player", "检测为 DASH 流")
-    }
+                        // DASH 协议
+                        urlLowerCase.contains("type=dash") ||
+                        urlLowerCase.contains(".mpd") -> {
+                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MPD)
+                            Log.d("Player", "检测为 DASH 流")
+                        }
 
-    else -> {
-        // 兜底逻辑：不设置 MimeType，让 ExoPlayer 自动嗅探重定向后的内容
-        Log.d("Player", "未知类型，启用自动识别模式")
-    }
-}
+                        else -> {
+                            // 兜底逻辑：不设置 MimeType，让 ExoPlayer 自动嗅探重定向后的内容
+                            Log.d("Player", "未知类型，启用自动识别模式")
+                        }
+                    }
 
-val mediaItem = mediaItemBuilder.build()
+                    val mediaItem = mediaItemBuilder.build()
 
                     // --- 3. 执行播放 (建议先 stop 确保状态干净) ---
                     mediaController?.let { controller ->

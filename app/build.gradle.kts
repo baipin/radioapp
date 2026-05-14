@@ -15,8 +15,8 @@ android {
         applicationId = "com.baipon.radio"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.0.14"
+        versionCode = 17
+        versionName = "0.0.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
