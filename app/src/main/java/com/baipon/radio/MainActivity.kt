@@ -126,16 +126,34 @@ class MainActivity : AppCompatActivity() {
 
                     val metadata = metadataBuilder.build()
 
-                    val mediaItem = MediaItem.Builder()
+                    // --- 2. 核心修改：动态判定 MediaItem 类型 ---
+                    val mediaItemBuilder = MediaItem.Builder()
                         .setUri(streamUrl)
                         .setMediaMetadata(metadata)
-                        .build()
 
-                    mediaController?.setMediaItem(mediaItem)
-                    mediaController?.prepare()
-                    mediaController?.play()
+                    // 判定逻辑：如果是 m3u8 或是你特定的 API 地址（可能隐藏了后缀），强制指定 HLS
+                    if (streamUrl.contains(".m3u8", ignoreCase = true) ||
+                        streamUrl.contains("type=hls", ignoreCase = true)) {
 
-                    Log.d("BaiponBridge", "播放成功 - 名称: $stationName, URL: $streamUrl")
+                        mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                        Log.d("BaiponBridge", "检测为 HLS 协议，已设置 MimeType")
+                    } else {
+                        // 对于普通的 .mp3, .aac 或其他直链，不设置 MimeType
+                        // ExoPlayer 会自动通过 ProgressiveMediaSource 进行嗅探解析
+                        Log.d("BaiponBridge", "检测为普通音频流，由系统自动识别")
+                    }
+
+                    val mediaItem = mediaItemBuilder.build()
+
+                    // --- 3. 执行播放 (建议先 stop 确保状态干净) ---
+                    mediaController?.let { controller ->
+                        controller.stop()
+                        controller.setMediaItem(mediaItem)
+                        controller.prepare()
+                        controller.play()
+                    }
+
+                    Log.d("BaiponBridge", "播放指令已发送 - 名称: $stationName")
                 }
             }
         }

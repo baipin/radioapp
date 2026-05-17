@@ -217,7 +217,9 @@ class PlaybackService : MediaSessionService() {
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
                 .setMediaMetadata(metadata)
+                .setMediaMetadata(MediaMetadata.Builder().setTitle(name).build())
                 .build()
+
 
             player.setMediaItem(mediaItem)
             player.prepare()
