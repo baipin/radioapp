@@ -21,6 +21,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import androidx.media3.exoplayer.DefaultLoadControl
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -44,6 +45,15 @@ class PlaybackService : MediaSessionService() {
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .setAllowCrossProtocolRedirects(true) // 必须：允许 https -> http 的跳转
 
+        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                15000, // minBufferMs: 最小缓存15秒的数据（为了抗网络抖动）
+                50000, // maxBufferMs: 最大缓存50秒
+                1000,  // bufferForPlaybackMs: 🌟 首次播放只需要1秒的数据就立刻出声
+                1000   // bufferForPlaybackAfterRebufferMs: 🌟 卡顿后，只要攒够1秒数据就继续播（默认是5000ms，太长了）
+            )
+            .build()
+
         // 2. 将数据源工厂注入到 Player 中
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(
@@ -57,6 +67,9 @@ class PlaybackService : MediaSessionService() {
                     .build(),
                 true
             )
+            .setWakeMode(C.WAKE_MODE_NETWORK) // 🌟 关键修复：保持 CPU 和网络在后台运行
+            .setHandleAudioBecomingNoisy(true) // 💡 推荐增强：耳机拔出时自动暂停
+            .setLoadControl(loadControl)
             .build()
 
         // 3. (可选) 添加详细日志监听器，帮你定位到底是哪一步断了
@@ -77,6 +90,29 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
                 updateNotification()
+            }
+            // 🌟 关键修复：处理直播流异常断开和播放结束的假象
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    androidx.media3.common.Player.STATE_ENDED -> {
+                        Log.w("BaiponBridge", "直播流意外结束 (可能 EOF)，尝试自动重连...")
+                        // 对于直播流，收到 ENDED 重置播放器以重新拉流
+                        player.seekToDefaultPosition()
+                        player.prepare()
+                        player.play()
+                    }
+                    androidx.media3.common.Player.STATE_BUFFERING -> {
+                        Log.d("BaiponBridge", "正在缓冲...")
+                    }
+                }
+            }
+
+            // 🌟 关键修复：处理网络波动导致的流错误
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Log.e("BaiponBridge", "播放器发生错误，尝试恢复: ${error.message}", error)
+                // 遇到网络异常时，尝试重新 prepare 并播放
+                player.prepare()
+                player.play()
             }
         })
 
@@ -217,7 +253,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun playStream(url: String, name: String) {
         try {
-            Log.d("BaiponBridge", "playStream 被调用: $name - $url")
+            Log.d("BaiponBridge", "Service playStream 开始处理: $name - $url")
 
             currentStationName = name
 
@@ -226,31 +262,50 @@ class PlaybackService : MediaSessionService() {
                 .setArtist("在线直播")
                 .build()
 
-            val mediaItem = MediaItem.Builder()
+            val mediaItemBuilder = MediaItem.Builder()
                 .setUri(url)
-                // 关键：这行代码告诉 ExoPlayer：无论这个 URL 长什么样，
-                // 最终它一定是一个 M3U8，请按 HLS 逻辑处理后续所有跳转。
-                .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(name).build())
-                .build()
+                .setMediaMetadata(metadata)
+                .setMediaMetadata(metadata)
+                // 🌟 新增：显式告诉 ExoPlayer 这是直播流
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setMaxPlaybackSpeed(1.02f) // 允许轻微加速（不易察觉）来追赶直播进度，防止延迟越来越大
+                        .build()
+                )
 
-            // 2. 关键：手动创建 HlsMediaSource，强制跳过嗅探环节
-            // 注意：如果你在 onCreate 里已经配置了 httpDataSourceFactory，这里直接用
-            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setAllowCrossProtocolRedirects(true)
-                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            // 根据 URL 动态设置正确的 MimeType，让 ExoPlayer 能够正确路由
+            val urlLowerCase = url.lowercase()
+            when {
+                urlLowerCase.contains("type=hls") ||
+                        urlLowerCase.contains("type=m3u8") ||
+                        urlLowerCase.contains(".m3u8") -> {
+                    mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                    Log.d("BaiponBridge", "Service 识别为：HLS (M3U8) 流")
+                }
+                urlLowerCase.contains("type=aac") ||
+                        urlLowerCase.contains(".aac") -> {
+                    // AAC 裸流不要强行设为 AUDIO_AAC，不设 MimeType 让 DefaultMediaSourceFactory 的 Extractor 自动嗅探 ADTS 帧更稳妥
+                    Log.d("BaiponBridge", "Service 识别为：AAC 裸流 (启用自动嗅探)")
+                }
+                urlLowerCase.contains("type=mp3") ||
+                        urlLowerCase.contains(".mp3") -> {
+                    mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
+                    Log.d("BaiponBridge", "Service 识别为：MP3 音频")
+                }
+            }
 
-            val hlsMediaSource = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(httpDataSourceFactory)
-                .createMediaSource(mediaItem)
+            val mediaItem = mediaItemBuilder.build()
 
-            player.setMediaSource(hlsMediaSource)
+            // 【核心修改】：利用你在 onCreate 里配置好的、带万能自适应的默认工厂
+            // 不要再写死 HlsMediaSource 了！
+            player.stop() // 清理上一首的状态
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
 
-            Log.d("BaiponBridge", "开始播放: $name")
+            Log.d("BaiponBridge", "Service 原生播放指令已成功执行: $name")
         } catch (e: Exception) {
-            Log.e("BaiponBridge", "播放失败: ${e.message}", e)
+            Log.e("BaiponBridge", "Service 播放失败: ${e.message}", e)
         }
     }
 
