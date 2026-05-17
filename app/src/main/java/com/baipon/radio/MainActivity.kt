@@ -41,6 +41,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ExecutionException
 import android.widget.ProgressBar
+import androidx.media3.session.SessionCommand
 
 @OptIn(UnstableApi::class)
 class MainActivity : AppCompatActivity() {
@@ -105,7 +106,6 @@ class MainActivity : AppCompatActivity() {
                         .setTitle(stationName)
                         .setArtist(getString(R.string.app_name))
 
-                    // --- 1. 加载 Logo 逻辑 (保持不变) ---
                     if (logoUrl.isNotEmpty() && logoUrl.startsWith("http")) {
                         try {
                             val bitmap = withContext(Dispatchers.IO) {
@@ -126,64 +126,20 @@ class MainActivity : AppCompatActivity() {
 
                     val metadata = metadataBuilder.build()
 
-                    // --- 2. 核心修改：动态判定 MediaItem 类型 ---
-                    val mediaItemBuilder = MediaItem.Builder()
-                   .setUri(streamUrl)
-                   .setMediaMetadata(metadata)
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(streamUrl)
+                        .setMediaMetadata(metadata)
+                        .build()
 
-                    // 将 URL 转为小写进行统一判定，防止大小写导致匹配失败
-                    val urlLowerCase = streamUrl.lowercase()
+                    mediaController?.setMediaItem(mediaItem)
+                    mediaController?.prepare()
+                    mediaController?.play()
 
-                    when {
-                        // HLS 协议 (直播流最常用)
-                        urlLowerCase.contains("type=hls") ||
-                        urlLowerCase.contains("type=m3u8") ||
-                        urlLowerCase.contains(".m3u8") -> {
-                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
-                            Log.d("Player", "检测为 HLS 流")
-                        }
-
-                        // MP3 音频
-                        urlLowerCase.contains("type=mp3") ||
-                        urlLowerCase.contains(".mp3") -> {
-                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MPEG)
-                            Log.d("Player", "检测为 MP3 音频")
-                        }
-
-                        // AAC 音频
-                        urlLowerCase.contains("type=aac") ||
-                        urlLowerCase.contains(".aac") -> {
-                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
-                            Log.d("Player", "检测为 AAC 音频")
-                        }
-
-                        // DASH 协议
-                        urlLowerCase.contains("type=dash") ||
-                        urlLowerCase.contains(".mpd") -> {
-                            mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MPD)
-                            Log.d("Player", "检测为 DASH 流")
-                        }
-
-                        else -> {
-                            // 兜底逻辑：不设置 MimeType，让 ExoPlayer 自动嗅探重定向后的内容
-                            Log.d("Player", "未知类型，启用自动识别模式")
-                        }
-                    }
-
-                    val mediaItem = mediaItemBuilder.build()
-
-                    // --- 3. 执行播放 (建议先 stop 确保状态干净) ---
-                    mediaController?.let { controller ->
-                        controller.stop()
-                        controller.setMediaItem(mediaItem)
-                        controller.prepare()
-                        controller.play()
-                    }
-
-                    Log.d("BaiponBridge", "播放指令已发送 - 名称: $stationName")
+                    Log.d("BaiponBridge", "播放成功 - 名称: $stationName, URL: $streamUrl")
                 }
             }
         }
+
 
         @JavascriptInterface
         fun onStationChanged(stationName: String, stationUrl: String, logoUrl: String = "") {
@@ -656,6 +612,7 @@ class MainActivity : AppCompatActivity() {
                     console.log('play 被调用: ' + (s && s.name));
                     currentStation = s;
                     
+                    // 调用原始play函数（更新网页UI）
                     if (originalPlay && typeof originalPlay === 'function') {
                         try {
                             originalPlay(s, el);
@@ -664,6 +621,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     
+                    // 通知原生播放，让Media3播放同一个流
                     if (window.AndroidBridge && window.AndroidBridge.playStream) {
                         window.AndroidBridge.playStream(s.url, s.name, s.logo || "");
                     }
