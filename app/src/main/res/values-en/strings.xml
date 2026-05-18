@@ -107,4 +107,10 @@
     <string name="signal_lost">Signal Lost</string>
     <string name="error_message">Cannot connect to server\nPlease check your network settings</string>
     <string name="retry">Retry</string>
+
+    <string name="use_proxy">Force to use media proxy</string>
+    <string name="use_proxy_summary">All audio streams are played through a server proxy (to resolve the issue of some sources not being able to connect directly), but please note that some radio stations may refuse to connect to the proxy server.</string>
+    <string name="proxy_status_toast">Proxy mode %1$s, takes effect after restart</string>
+    <string name="status_on">enabled</string>
+    <string name="status_off">disabled</string>
 </resources>

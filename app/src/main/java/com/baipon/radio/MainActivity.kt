@@ -42,6 +42,7 @@ import java.net.URL
 import java.util.concurrent.ExecutionException
 import android.widget.ProgressBar
 import androidx.media3.session.SessionCommand
+import androidx.preference.PreferenceManager
 
 @OptIn(UnstableApi::class)
 class MainActivity : AppCompatActivity() {
@@ -89,6 +90,14 @@ class MainActivity : AppCompatActivity() {
     """.trimIndent()
     }
 
+    private fun getProxiedUrl(originalUrl: String): String {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (prefs.getBoolean("use_media_proxy", false) && originalUrl.startsWith("http")) {
+            return "https://radio.baipon.com/api/proxy?url=${java.net.URLEncoder.encode(originalUrl, "UTF-8")}"
+        }
+        return originalUrl
+    }
+
     // 网页与原生交互桥接
     inner class WebAppInterface {
         @JavascriptInterface
@@ -96,9 +105,12 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { myWebView.loadUrl(webUrl) }
         }
 
+
         @JavascriptInterface
         fun playStream(streamUrl: String, stationName: String, logoUrl: String = "") {
             Log.d("BaiponBridge", "playStream 被调用: $stationName - $streamUrl - Logo: $logoUrl")
+            val finalUrl = getProxiedUrl(streamUrl)
+
 
             mainScope.launch {
                 ensureMediaControllerConnected {
@@ -128,17 +140,18 @@ class MainActivity : AppCompatActivity() {
 
                     // --- 2. 核心修改：动态判定 MediaItem 类型 ---
                     val mediaItemBuilder = MediaItem.Builder()
-                        .setUri(streamUrl)
+                        .setUri(finalUrl)
                         .setMediaMetadata(metadata)
 
                     // 判定逻辑：如果是 m3u8 或是你特定的 API 地址（可能隐藏了后缀），强制指定 HLS
-                    if (streamUrl.contains(".m3u8", ignoreCase = true) ||
-                        streamUrl.contains("type=hls", ignoreCase = true)) {
+                    if (finalUrl.contains(".m3u8", ignoreCase = true) ||
+                        finalUrl.contains("type=hls", ignoreCase = true)
+                    ) {
 
                         mediaItemBuilder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
                         Log.d("BaiponBridge", "检测为 HLS 协议，已设置 MimeType")
-                    } else {
-                        // 对于普通的 .mp3, .aac 或其他直链，不设置 MimeType
+                    }else {
+                        // 对于普通的 .aac 或其他直链，不设置 MimeType
                         // ExoPlayer 会自动通过 ProgressiveMediaSource 进行嗅探解析
                         Log.d("BaiponBridge", "检测为普通音频流，由系统自动识别")
                     }

@@ -107,4 +107,10 @@
     <string name="signal_lost">訊號中斷</string>
     <string name="error_message">百品電台無法連線到伺服器\n請檢查您的網路設定</string>
     <string name="retry">嘗試重連</string>
+
+    <string name="use_proxy">強制使用媒體代理</string>
+    <string name="use_proxy_summary">所有音訊串流透過伺服器代理播放（解決部分源無法直連問題），但請注意部分電台可能拒絕代理伺服器連接</string>
+    <string name="proxy_status_toast">已%1$s代理模式，重啟後生效</string>
+    <string name="status_on">開啟</string>
+    <string name="status_off">關閉</string>
 </resources>

@@ -21,6 +21,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import androidx.preference.PreferenceManager
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {
@@ -203,7 +204,17 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
+    // 新增辅助方法
+    private fun getProxiedUrl(originalUrl: String): String {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (prefs.getBoolean("use_media_proxy", false) && originalUrl.startsWith("http")) {
+            return "https://radio.baipon.com/api/proxy?url=${java.net.URLEncoder.encode(originalUrl, "UTF-8")}"
+        }
+        return originalUrl
+    }
+
     private fun playStream(url: String, name: String) {
+        val finalUrl = getProxiedUrl(url)
         try {
             Log.d("BaiponBridge", "playStream 被调用: $name - $url")
 
@@ -215,7 +226,7 @@ class PlaybackService : MediaSessionService() {
                 .build()
 
             val mediaItem = MediaItem.Builder()
-                .setUri(url)
+                .setUri(finalUrl)
                 .setMediaMetadata(metadata)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle(name).build())
                 .build()

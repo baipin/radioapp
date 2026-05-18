@@ -15,8 +15,8 @@ android {
         applicationId = "com.baipon.radio"
         minSdk = 24
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.0.2"
+        versionCode = 21
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -69,4 +69,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("com.github.bumptech.glide:glide:5.0.7")
+    implementation("androidx.preference:preference:1.2.1")
+    implementation("androidx.preference:preference-ktx:1.2.1")
 }

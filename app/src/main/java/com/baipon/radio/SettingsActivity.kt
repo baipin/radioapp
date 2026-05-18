@@ -21,6 +21,10 @@ import java.net.URL
 import androidx.core.view.WindowInsetsControllerCompat
 import android.content.res.Configuration
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.preference.PreferenceManager
+
+private lateinit var prefs: SharedPreferences
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -37,6 +41,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
         // 在 setContentView 之后调用
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -96,6 +101,33 @@ class SettingsActivity : AppCompatActivity() {
         // 清除缓存按钮
         findViewById<LinearLayout>(R.id.btn_clear_cache)?.setOnClickListener {
             showClearCacheDialog()
+        }
+
+        val switchProxy = findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_proxy)
+        val switchContainer = findViewById<LinearLayout>(R.id.switch_proxy_container)
+
+        // 1. 初始化状态（注意：这里使用了一个小技巧，先解绑监听，防止初始化时触发监听）
+        switchProxy?.setOnCheckedChangeListener(null)
+        switchProxy?.isChecked = prefs.getBoolean("use_media_proxy", false)
+
+        // 2. 统一监听开关的状态改变
+        switchProxy?.setOnCheckedChangeListener { _, isChecked ->
+            // 当开关状态发生任何改变时（不论怎么点），都会执行这里
+            prefs.edit().putBoolean("use_media_proxy", isChecked).apply()
+
+            // 动态获取当前系统语言对应的“开启”或“关闭”文本
+            val statusText = if (isChecked) getString(R.string.status_on) else getString(R.string.status_off)
+            // 将状态文本注入到带占位符的多语言模板中
+            val toastMessage = getString(R.string.proxy_status_toast, statusText)
+
+            Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show()
+        }
+
+            // 3. 点击整个横条时，只需要负责“把开关状态取反”即可
+        switchContainer?.setOnClickListener {
+            switchProxy?.let {
+                it.isChecked = !it.isChecked // 改变状态会直接触发上面的 setOnCheckedChangeListener
+            }
         }
     }
 
